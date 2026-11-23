@@ -6,10 +6,11 @@ import {
   formatBoardDateParam,
   parseBoardDate,
   startOfLocalDay,
+  toDeskBlock,
 } from "@/lib/load-board";
 import { loadBoardOccupancy } from "@/lib/load-board-data";
 import { SectionTitle } from "@/components/ui";
-import { LoadBoardGrid, LoadBoardLegend } from "@/components/load-board";
+import { InteractiveDesk } from "@/components/interactive-desk";
 
 export default async function ManagerDeskPage({
   searchParams,
@@ -33,7 +34,7 @@ export default async function ManagerDeskPage({
     month: "long",
   }).format(day);
 
-  const { posts, blocks } = await loadBoardOccupancy(
+  const { posts, blocks, customers, services } = await loadBoardOccupancy(
     organizationId,
     dayStart,
     dayEnd,
@@ -49,20 +50,20 @@ export default async function ManagerDeskPage({
       <SectionTitle
         eyebrow="Загрузка"
         title="Рабочий стол"
-        description="День по часам и постам: занятые слоты — записи и заказ-наряды, пустые ячейки свободны."
+        description="Интерактивная доска: перетаскивайте карточки, меняйте длительность, создавайте записи тапом по свободному слоту."
       />
 
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={`/owner/desk?date=${prev}`}
-            className="rounded-md border border-[var(--line)] bg-white/80 px-3 py-2 text-sm font-semibold text-[var(--ink)] hover:border-[var(--ink)]/30"
+            className="min-h-11 rounded-md border border-[var(--line)] bg-white/80 px-3 py-2 text-sm font-semibold text-[var(--ink)] hover:border-[var(--ink)]/30"
           >
             ← Вчера
           </Link>
           <Link
             href={`/owner/desk?date=${today}`}
-            className={`rounded-md px-3 py-2 text-sm font-semibold ${
+            className={`min-h-11 rounded-md px-3 py-2 text-sm font-semibold ${
               isToday
                 ? "bg-[var(--ink)] text-white"
                 : "border border-[var(--line)] bg-white/80 text-[var(--ink)] hover:border-[var(--ink)]/30"
@@ -72,7 +73,7 @@ export default async function ManagerDeskPage({
           </Link>
           <Link
             href={`/owner/desk?date=${next}`}
-            className="rounded-md border border-[var(--line)] bg-white/80 px-3 py-2 text-sm font-semibold text-[var(--ink)] hover:border-[var(--ink)]/30"
+            className="min-h-11 rounded-md border border-[var(--line)] bg-white/80 px-3 py-2 text-sm font-semibold text-[var(--ink)] hover:border-[var(--ink)]/30"
           >
             Завтра →
           </Link>
@@ -91,10 +92,13 @@ export default async function ManagerDeskPage({
           Нет активных постов. Добавьте боксы в настройках точки.
         </div>
       ) : (
-        <>
-          <LoadBoardGrid posts={posts} blocks={blocks} />
-          <LoadBoardLegend />
-        </>
+        <InteractiveDesk
+          dayIso={dayStart.toISOString()}
+          posts={posts.map((p) => ({ id: p.id, name: p.name }))}
+          initialBlocks={blocks.map(toDeskBlock)}
+          customers={customers}
+          services={services}
+        />
       )}
     </div>
   );
