@@ -35,7 +35,9 @@ export default async function ManagerDeskPage({
     month: "long",
   }).format(day);
 
-  const [posts, bookings, workOrders] = await Promise.all([
+  // Avoid nullable `{ not: null }` filters (PrismaClientValidationError on some
+  // Windows/SQLite client builds). Filter assigned posts in JS instead.
+  const [posts, bookingsRaw, workOrdersRaw] = await Promise.all([
     prisma.servicePost.findMany({
       where: { organizationId, isActive: true },
       orderBy: { sortOrder: "asc" },
@@ -43,8 +45,7 @@ export default async function ManagerDeskPage({
     prisma.booking.findMany({
       where: {
         organizationId,
-        postId: { not: null },
-        status: { not: "CANCELLED" },
+        status: { in: ["PENDING", "CONFIRMED", "IN_PROGRESS", "DONE"] },
         startsAt: { gte: dayStart, lte: dayEnd },
       },
       include: { client: true },
@@ -53,52 +54,52 @@ export default async function ManagerDeskPage({
     prisma.workOrder.findMany({
       where: {
         organizationId,
-        postId: { not: null },
-        scheduledAt: { gte: dayStart, lte: dayEnd },
-        status: { notIn: ["CANCELLED", "DRAFT"] },
+        status: { in: ["OPEN", "IN_PROGRESS", "DONE"] },
+        AND: [
+          { scheduledAt: { gte: dayStart } },
+          { scheduledAt: { lte: dayEnd } },
+        ],
       },
       include: {
         customer: true,
         vehicle: true,
         lines: true,
       },
-      orderBy: { scheduledAt: "asc" },
+      orderBy: { createdAt: "asc" },
     }),
   ]);
 
+  const bookings = bookingsRaw.filter((b) => b.postId != null);
+  const workOrders = workOrdersRaw
+    .filter((wo) => wo.postId != null && wo.scheduledAt != null)
+    .sort(
+      (a, b) =>
+        (a.scheduledAt?.getTime() ?? 0) - (b.scheduledAt?.getTime() ?? 0),
+    );
+
   const blocks: BoardBlock[] = [
-    ...bookings
-      .filter((b): b is typeof b & { postId: string } => Boolean(b.postId))
-      .map((b) => ({
-        id: b.id,
-        kind: "booking" as const,
-        postId: b.postId,
-        title: b.serviceName,
-        subtitle:
-          b.vehicleInfo ??
-          b.client.name ??
-          "Клиент",
-        startsAt: b.startsAt,
-        durationMin: b.durationMin,
-        status: b.status,
-        href: "/owner/bookings",
-      })),
-    ...workOrders
-      .filter(
-        (wo): wo is typeof wo & { postId: string; scheduledAt: Date } =>
-          Boolean(wo.postId && wo.scheduledAt),
-      )
-      .map((wo) => ({
-        id: wo.id,
-        kind: "work_order" as const,
-        postId: wo.postId,
-        title: `${workOrderNumberLabel(wo.number)} · ${wo.lines[0]?.name ?? "Работы"}`,
-        subtitle: `${wo.customer.name} · ${wo.vehicle.plate}`,
-        startsAt: wo.scheduledAt,
-        durationMin: Math.max(30, workOrderDuration(wo.lines)),
-        status: wo.status,
-        href: `/owner/work-orders/${wo.id}`,
-      })),
+    ...bookings.map((b) => ({
+      id: b.id,
+      kind: "booking" as const,
+      postId: b.postId as string,
+      title: b.serviceName,
+      subtitle: b.vehicleInfo ?? b.client.name ?? "Клиент",
+      startsAt: b.startsAt,
+      durationMin: b.durationMin,
+      status: b.status,
+      href: "/owner/bookings",
+    })),
+    ...workOrders.map((wo) => ({
+      id: wo.id,
+      kind: "work_order" as const,
+      postId: wo.postId as string,
+      title: `${workOrderNumberLabel(wo.number)} · ${wo.lines[0]?.name ?? "Работы"}`,
+      subtitle: `${wo.customer.name} · ${wo.vehicle.plate}`,
+      startsAt: wo.scheduledAt as Date,
+      durationMin: Math.max(30, workOrderDuration(wo.lines)),
+      status: wo.status,
+      href: `/owner/work-orders/${wo.id}`,
+    })),
   ];
 
   const occupied = blocks.length;

@@ -13,11 +13,14 @@ SaaS для автомоек и автосервисов: мультитенан
 cp .env.example .env
 npm install
 npx prisma migrate dev
+npx prisma generate
 npm run db:seed
 npm run dev
 ```
 
 Откройте [http://localhost:3000](http://localhost:3000).
+
+После `git pull` ветки с рабочим столом обязательно прогоните миграции и seed — иначе `/owner/desk` упадёт на старой схеме БД.
 
 ## Демо-вход (пароль не нужен)
 
