@@ -1,14 +1,28 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { formatDateTime, formatRub, bookingStatusLabel } from "@/lib/format";
+import {
+  formatDateTime,
+  formatRub,
+  bookingStatusLabel,
+  workOrderStatusLabel,
+  workOrderStatusTone,
+} from "@/lib/format";
+import {
+  workOrderNumberLabel,
+  workOrderTotal,
+} from "@/lib/work-order";
 import { SectionTitle, StatusPill } from "@/components/ui";
 
 export default async function ClientCabinetPage() {
   const session = await requireSession(["CLIENT"]);
   const orgId = session.membership.organization.id;
 
-  const [nextBooking, lastOrder] = await Promise.all([
+  const customer = await prisma.customer.findFirst({
+    where: { organizationId: orgId, userId: session.id },
+  });
+
+  const [nextBooking, lastWorkOrder] = await Promise.all([
     prisma.booking.findFirst({
       where: {
         organizationId: orgId,
@@ -19,10 +33,13 @@ export default async function ClientCabinetPage() {
       include: { post: true },
       orderBy: { startsAt: "asc" },
     }),
-    prisma.order.findFirst({
-      where: { organizationId: orgId, clientId: session.id },
-      orderBy: { completedAt: "desc" },
-    }),
+    customer
+      ? prisma.workOrder.findFirst({
+          where: { organizationId: orgId, customerId: customer.id },
+          include: { lines: true, vehicle: true },
+          orderBy: { createdAt: "desc" },
+        })
+      : Promise.resolve(null),
   ]);
 
   return (
@@ -67,16 +84,25 @@ export default async function ClientCabinetPage() {
 
         <section className="rounded-xl border border-[var(--line)] bg-white/85 p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
-            Последний заказ
+            Последний заказ-наряд
           </p>
-          {lastOrder ? (
+          {lastWorkOrder ? (
             <div className="mt-4">
               <p className="brand-mark text-2xl text-[var(--ink)]">
-                {lastOrder.title}
+                {workOrderNumberLabel(lastWorkOrder.number)}
               </p>
               <p className="mt-2 text-sm text-[var(--ink-soft)]">
-                {formatRub(lastOrder.amountRub)}
+                {lastWorkOrder.lines.map((l) => l.name).join(", ")}
               </p>
+              <p className="mt-1 text-sm text-[var(--ink-soft)]">
+                {formatRub(workOrderTotal(lastWorkOrder.lines))} ·{" "}
+                {lastWorkOrder.vehicle.plate}
+              </p>
+              <div className="mt-3">
+                <StatusPill tone={workOrderStatusTone(lastWorkOrder.status)}>
+                  {workOrderStatusLabel[lastWorkOrder.status]}
+                </StatusPill>
+              </div>
               <Link
                 href="/client/orders"
                 className="mt-4 inline-block text-sm font-semibold text-[var(--accent)] hover:text-[var(--accent-deep)]"

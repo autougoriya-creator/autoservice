@@ -43,3 +43,27 @@ export const roleLabel: Record<string, string> = {
   STAFF: "Персонал",
   CLIENT: "Клиент",
 };
+
+export const workOrderStatusLabel: Record<string, string> = {
+  DRAFT: "Черновик",
+  OPEN: "Открыт",
+  IN_PROGRESS: "В работе",
+  DONE: "Готов",
+  CANCELLED: "Отменён",
+};
+
+export function workOrderStatusTone(
+  status: string,
+): "neutral" | "ok" | "warn" | "accent" {
+  switch (status) {
+    case "DONE":
+      return "ok";
+    case "IN_PROGRESS":
+      return "accent";
+    case "OPEN":
+    case "DRAFT":
+      return "warn";
+    default:
+      return "neutral";
+  }
+}
