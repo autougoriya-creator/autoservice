@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { orgIdOf, requireStaffSession } from "@/lib/tenant";
+import { prisma } from "@/lib/prisma";
+import { isStaff, orgIdOf, requireStaffSession } from "@/lib/tenant";
 import {
   addDays,
   endOfLocalDay,
@@ -19,6 +20,7 @@ export default async function ManagerDeskPage({
 }) {
   const session = await requireStaffSession();
   const organizationId = orgIdOf(session);
+  const staffView = isStaff(session);
   const { date: dateParam } = await searchParams;
   const day = parseBoardDate(dateParam);
   const dayStart = startOfLocalDay(day);
@@ -34,10 +36,29 @@ export default async function ManagerDeskPage({
     month: "long",
   }).format(day);
 
+  let staffPostIds: string[] | undefined;
+  if (staffView) {
+    const profile = await prisma.staffProfile.findFirst({
+      where: {
+        organizationId,
+        userId: session.id,
+        isActive: true,
+      },
+      include: {
+        assignments: {
+          where: { activeTo: null },
+          select: { postId: true },
+        },
+      },
+    });
+    staffPostIds = profile?.assignments.map((a) => a.postId) ?? [];
+  }
+
   const { posts, blocks, customers, services } = await loadBoardOccupancy(
     organizationId,
     dayStart,
     dayEnd,
+    staffView ? { postIds: staffPostIds ?? [] } : undefined,
   );
 
   const occupied = blocks.length;
@@ -49,8 +70,12 @@ export default async function ManagerDeskPage({
     <div>
       <SectionTitle
         eyebrow="Загрузка"
-        title="Рабочий стол"
-        description="Интерактивная доска: перетаскивайте карточки, меняйте длительность, создавайте записи тапом по свободному слоту."
+        title={staffView ? "Мой пост" : "Рабочий стол"}
+        description={
+          staffView
+            ? "Просмотр загрузки закреплённых за вами постов. Только чтение — без перетаскивания и новых записей."
+            : "Интерактивная доска: перетаскивайте карточки, меняйте длительность, создавайте записи тапом по свободному слоту."
+        }
       />
 
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -84,10 +109,20 @@ export default async function ManagerDeskPage({
           </span>
           <span className="mx-2">·</span>
           {occupied} занято · {freePosts} пост(ов) без слотов
+          {staffView ? (
+            <>
+              <span className="mx-2">·</span>
+              <span className="font-semibold text-[var(--teal)]">только просмотр</span>
+            </>
+          ) : null}
         </div>
       </div>
 
-      {posts.length === 0 ? (
+      {staffView && posts.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[var(--line)] bg-white/70 px-6 py-10 text-center text-sm text-[var(--ink-soft)]">
+          Вам ещё не закреплён пост. Обратитесь к владельцу или администратору.
+        </div>
+      ) : posts.length === 0 ? (
         <div className="rounded-xl border border-dashed border-[var(--line)] bg-white/70 px-6 py-10 text-center text-sm text-[var(--ink-soft)]">
           Нет активных постов. Добавьте боксы в настройках точки.
         </div>
@@ -98,6 +133,7 @@ export default async function ManagerDeskPage({
           initialBlocks={blocks.map(toDeskBlock)}
           customers={customers}
           services={services}
+          readOnly={staffView}
         />
       )}
     </div>

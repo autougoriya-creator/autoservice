@@ -21,13 +21,16 @@ function inDay(date: Date | null | undefined, dayStart: Date, dayEnd: Date) {
  * Load board occupancy for one org/day.
  * Prisma `where` stays minimal so Windows/SQLite clients don't hit
  * PrismaClientValidationError on enum/nullable filters.
+ * Optional `postIds` limits rows (e.g. STAFF assigned posts only).
  */
 export async function loadBoardOccupancy(
   organizationId: string,
   dayStart: Date,
   dayEnd: Date,
+  options?: { postIds?: string[] },
 ) {
-  const [posts, bookingsRaw, workOrdersRaw, customers, services] =
+  const postIdFilter = options?.postIds;
+  const [postsRaw, bookingsRaw, workOrdersRaw, customers, services] =
     await Promise.all([
       prisma.servicePost.findMany({
         where: { organizationId, isActive: true },
@@ -61,9 +64,18 @@ export async function loadBoardOccupancy(
       }),
     ]);
 
+  const posts =
+    postIdFilter == null
+      ? postsRaw
+      : postsRaw.filter((p) => postIdFilter.includes(p.id));
+
+  const allowedPost = (postId: string | null | undefined) =>
+    postId != null &&
+    (postIdFilter == null || postIdFilter.includes(postId));
+
   const bookings = bookingsRaw.filter(
     (b) =>
-      b.postId != null &&
+      allowedPost(b.postId) &&
       BOOKING_STATUSES.has(String(b.status)) &&
       inDay(b.startsAt, dayStart, dayEnd),
   );
@@ -71,7 +83,7 @@ export async function loadBoardOccupancy(
   const workOrders = workOrdersRaw
     .filter(
       (wo) =>
-        wo.postId != null &&
+        allowedPost(wo.postId) &&
         wo.scheduledAt != null &&
         WORK_ORDER_STATUSES.has(String(wo.status)) &&
         inDay(wo.scheduledAt, dayStart, dayEnd),

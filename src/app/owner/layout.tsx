@@ -48,7 +48,7 @@ function navForRole(role: string) {
     title: "Кабинет сотрудника",
     links: [
       { href: "/owner/my-work", label: "Моя смена" },
-      { href: "/owner/desk", label: "Рабочий стол" },
+      { href: "/owner/desk", label: "Мой пост" },
       { href: "/owner/work-orders", label: "Заказ-наряды" },
       { href: "/owner/bookings", label: "Запись" },
     ],

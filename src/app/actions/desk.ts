@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { orgIdOf, requireStaffSession } from "@/lib/tenant";
+import { orgIdOf, requireManagementSession } from "@/lib/tenant";
 
 function revalidateDesk() {
   revalidatePath("/owner/desk");
@@ -22,7 +22,7 @@ export async function moveDeskItem(input: {
   durationMin?: number;
 }): Promise<DeskActionResult> {
   try {
-    const session = await requireStaffSession();
+    const session = await requireManagementSession();
     const organizationId = orgIdOf(session);
     const startsAt = new Date(input.startsAtIso);
     if (Number.isNaN(startsAt.getTime())) {
@@ -80,7 +80,7 @@ export async function updateDeskBooking(input: {
   vehicleInfo?: string;
 }): Promise<DeskActionResult> {
   try {
-    const session = await requireStaffSession();
+    const session = await requireManagementSession();
     const organizationId = orgIdOf(session);
     const startsAt = new Date(input.startsAtIso);
     if (Number.isNaN(startsAt.getTime())) {
@@ -127,7 +127,7 @@ export async function updateDeskWorkOrder(input: {
   status: string;
 }): Promise<DeskActionResult> {
   try {
-    const session = await requireStaffSession();
+    const session = await requireManagementSession();
     const organizationId = orgIdOf(session);
     const startsAt = new Date(input.startsAtIso);
     if (Number.isNaN(startsAt.getTime())) {
@@ -174,7 +174,7 @@ export async function createDeskBooking(input: {
   vehicleInfo?: string;
 }): Promise<DeskActionResult & { id?: string }> {
   try {
-    const session = await requireStaffSession();
+    const session = await requireManagementSession();
     const organizationId = orgIdOf(session);
     const startsAt = new Date(input.startsAtIso);
     if (Number.isNaN(startsAt.getTime())) {
