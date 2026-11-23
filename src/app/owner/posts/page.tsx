@@ -28,9 +28,9 @@ export default async function PostsBoardPage() {
   return (
     <div>
       <SectionTitle
-        eyebrow="Загрузка"
-        title="Доска постов"
-        description="Заглушка доски загрузки: посты тенанта и ближайшие визиты. Полноценные слоты и статусы — на следующем этапе."
+        eyebrow="Посты"
+        title="Посты точки"
+        description="Список боксов. Полная загрузка по часам — на «Рабочем столе»."
       />
 
       <div className="grid gap-4 lg:grid-cols-3">

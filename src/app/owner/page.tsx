@@ -47,7 +47,7 @@ export default async function OwnerDashboardPage() {
         description={`Добро пожаловать, ${session.name}. Справочники, заказ-наряды и текущая загрузка.`}
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric label="Клиенты" value={String(customersCount)} href="/owner/clients" />
         <Metric label="Услуги в прайсе" value={String(servicesCount)} href="/owner/services" />
         <Metric
@@ -55,6 +55,7 @@ export default async function OwnerDashboardPage() {
           value={String(openWorkOrders)}
           href="/owner/work-orders"
         />
+        <Metric label="Рабочий стол" value="→" href="/owner/desk" />
       </div>
 
       <section className="mt-10">
