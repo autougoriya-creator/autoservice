@@ -19,40 +19,47 @@ function inDay(date: Date | null | undefined, dayStart: Date, dayEnd: Date) {
 
 /**
  * Load board occupancy for one org/day.
- * Prisma `where` stays minimal (organizationId + startsAt) so Windows/SQLite
- * clients don't hit PrismaClientValidationError on enum/nullable filters.
+ * Prisma `where` stays minimal so Windows/SQLite clients don't hit
+ * PrismaClientValidationError on enum/nullable filters.
  */
 export async function loadBoardOccupancy(
   organizationId: string,
   dayStart: Date,
   dayEnd: Date,
 ) {
-  const [posts, bookingsRaw, workOrdersRaw] = await Promise.all([
-    prisma.servicePost.findMany({
-      where: { organizationId, isActive: true },
-      orderBy: { sortOrder: "asc" },
-    }),
-    // startsAt is required DateTime — safe filter on all clients
-    prisma.booking.findMany({
-      where: {
-        organizationId,
-        startsAt: { gte: dayStart, lte: dayEnd },
-      },
-      include: { client: true },
-      orderBy: { startsAt: "asc" },
-    }),
-    // No status / scheduledAt / postId filters — those triggered
-    // PrismaClientValidationError for the user on Win10 after pull.
-    prisma.workOrder.findMany({
-      where: { organizationId },
-      include: {
-        customer: true,
-        vehicle: true,
-        lines: true,
-      },
-      orderBy: { createdAt: "asc" },
-    }),
-  ]);
+  const [posts, bookingsRaw, workOrdersRaw, customers, services] =
+    await Promise.all([
+      prisma.servicePost.findMany({
+        where: { organizationId, isActive: true },
+        orderBy: { sortOrder: "asc" },
+      }),
+      prisma.booking.findMany({
+        where: {
+          organizationId,
+          startsAt: { gte: dayStart, lte: dayEnd },
+        },
+        include: { client: true },
+        orderBy: { startsAt: "asc" },
+      }),
+      prisma.workOrder.findMany({
+        where: { organizationId },
+        include: {
+          customer: true,
+          vehicle: true,
+          lines: true,
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.customer.findMany({
+        where: { organizationId },
+        orderBy: { name: "asc" },
+        take: 200,
+      }),
+      prisma.service.findMany({
+        where: { organizationId, isActive: true },
+        orderBy: { name: "asc" },
+      }),
+    ]);
 
   const bookings = bookingsRaw.filter(
     (b) =>
@@ -85,6 +92,9 @@ export async function loadBoardOccupancy(
       durationMin: b.durationMin ?? 60,
       status: String(b.status),
       href: "/owner/bookings",
+      clientName: b.client.name,
+      vehicleInfo: b.vehicleInfo ?? "",
+      services: [b.serviceName],
     })),
     ...workOrders.map((wo) => ({
       id: wo.id,
@@ -96,8 +106,26 @@ export async function loadBoardOccupancy(
       durationMin: Math.max(30, workOrderDuration(wo.lines)),
       status: String(wo.status),
       href: `/owner/work-orders/${wo.id}`,
+      clientName: wo.customer.name,
+      vehicleInfo: `${wo.vehicle.make} ${wo.vehicle.model} · ${wo.vehicle.plate}`,
+      services: wo.lines.map((l) => l.name),
+      workOrderNumber: wo.number,
     })),
   ];
 
-  return { posts, blocks };
+  return {
+    posts,
+    blocks,
+    customers: customers.map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+    })),
+    services: services.map((s) => ({
+      id: s.id,
+      name: s.name,
+      durationMin: s.durationMin,
+      priceRub: s.priceRub,
+    })),
+  };
 }

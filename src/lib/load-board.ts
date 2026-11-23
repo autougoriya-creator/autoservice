@@ -1,5 +1,7 @@
 export const BOARD_START_HOUR = 8;
 export const BOARD_END_HOUR = 20;
+export const BOARD_SNAP_MIN = 15;
+export const BOARD_WINDOW_MIN = (BOARD_END_HOUR - BOARD_START_HOUR) * 60;
 export const BOARD_HOURS = Array.from(
   { length: BOARD_END_HOUR - BOARD_START_HOUR },
   (_, i) => BOARD_START_HOUR + i,
@@ -15,7 +17,76 @@ export type BoardBlock = {
   durationMin: number;
   status: string;
   href: string;
+  clientName: string;
+  vehicleInfo: string;
+  services: string[];
+  workOrderNumber?: number;
 };
+
+/** Serializable block for client components */
+export type DeskBlock = {
+  id: string;
+  kind: "booking" | "work_order";
+  postId: string;
+  title: string;
+  subtitle: string;
+  startsAt: string;
+  durationMin: number;
+  status: string;
+  clientName: string;
+  vehicleInfo: string;
+  services: string[];
+  workOrderNumber?: number;
+};
+
+export function toDeskBlock(block: BoardBlock): DeskBlock {
+  return {
+    id: block.id,
+    kind: block.kind,
+    postId: block.postId,
+    title: block.title,
+    subtitle: block.subtitle,
+    startsAt: block.startsAt.toISOString(),
+    durationMin: block.durationMin,
+    status: block.status,
+    clientName: block.clientName,
+    vehicleInfo: block.vehicleInfo,
+    services: block.services,
+    workOrderNumber: block.workOrderNumber,
+  };
+}
+
+export function snapMinutes(value: number) {
+  return Math.round(value / BOARD_SNAP_MIN) * BOARD_SNAP_MIN;
+}
+
+export function clampBoardMinutes(offsetMin: number, durationMin = 0) {
+  const maxStart = BOARD_WINDOW_MIN - Math.max(BOARD_SNAP_MIN, durationMin);
+  return Math.max(0, Math.min(maxStart, snapMinutes(offsetMin)));
+}
+
+export function offsetMinutesFromDate(startsAt: Date) {
+  return (
+    startsAt.getHours() * 60 +
+    startsAt.getMinutes() -
+    BOARD_START_HOUR * 60
+  );
+}
+
+export function dateFromDayOffset(day: Date, offsetMin: number) {
+  const d = new Date(day);
+  d.setHours(BOARD_START_HOUR, 0, 0, 0);
+  d.setMinutes(d.getMinutes() + offsetMin);
+  return d;
+}
+
+export function pctFromOffset(offsetMin: number) {
+  return (offsetMin / BOARD_WINDOW_MIN) * 100;
+}
+
+export function offsetFromPct(pct: number) {
+  return (pct / 100) * BOARD_WINDOW_MIN;
+}
 
 export function startOfLocalDay(date: Date) {
   const d = new Date(date);
