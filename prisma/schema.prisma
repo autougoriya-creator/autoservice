@@ -1,0 +1,115 @@
+// Autoservice — multi-tenant schema (SQLite for local demo; Postgres-ready)
+// To switch to Postgres later: change provider to "postgresql" and DATABASE_URL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  STAFF
+  CLIENT
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  posts       ServicePost[]
+  bookings    Booking[]
+  orders      Order[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  bookings    Booking[]    @relation("ClientBookings")
+  orders      Order[]      @relation("ClientOrders")
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  role           Role
+  organizationId String
+  userId         String
+  createdAt      DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+/// Пост / бокс обслуживания
+model ServicePost {
+  id             String   @id @default(cuid())
+  name           String
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bookings     Booking[]
+
+  @@index([organizationId])
+}
+
+model Booking {
+  id             String        @id @default(cuid())
+  organizationId String
+  clientId       String
+  postId         String?
+  serviceName    String
+  vehicleInfo    String?
+  startsAt       DateTime
+  status         BookingStatus @default(PENDING)
+  createdAt      DateTime      @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       User         @relation("ClientBookings", fields: [clientId], references: [id])
+  post         ServicePost? @relation(fields: [postId], references: [id])
+
+  @@index([organizationId, startsAt])
+  @@index([clientId])
+}
+
+model Order {
+  id             String   @id @default(cuid())
+  organizationId String
+  clientId       String
+  title          String
+  amountRub      Int
+  completedAt    DateTime
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       User         @relation("ClientOrders", fields: [clientId], references: [id])
+
+  @@index([organizationId])
+  @@index([clientId])
+}
