@@ -40,7 +40,8 @@ export const bookingStatusLabel: Record<string, string> = {
 
 export const roleLabel: Record<string, string> = {
   OWNER: "Владелец",
-  STAFF: "Персонал",
+  ADMIN: "Администратор",
+  STAFF: "Сотрудник",
   CLIENT: "Клиент",
 };
 

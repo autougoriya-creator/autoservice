@@ -5,7 +5,7 @@ import {
   upsertStaffProfile,
 } from "@/app/actions/staff";
 import { prisma } from "@/lib/prisma";
-import { orgIdOf, requireStaffSession } from "@/lib/tenant";
+import { orgIdOf, requireOwnerSession } from "@/lib/tenant";
 import { payModeLabel } from "@/lib/payroll";
 import { formatRub } from "@/lib/format";
 import { ButtonLink, SectionTitle, StatusPill, SubmitButton } from "@/components/ui";
@@ -20,7 +20,7 @@ import {
 } from "@/components/forms";
 
 export default async function StaffPage() {
-  const session = await requireStaffSession(["OWNER"]);
+  const session = await requireOwnerSession();
   const organizationId = orgIdOf(session);
 
   const [profiles, staffUsers, posts, assignments] = await Promise.all([
@@ -110,7 +110,7 @@ export default async function StaffPage() {
         <FormCard>
           <h2 className="brand-mark mb-4 text-lg">Профиль сотрудника</h2>
           <form action={upsertStaffProfile} className="space-y-4">
-            <Field label="Пользователь (роль STAFF)" htmlFor="userId">
+            <Field label="Пользователь (роль «Сотрудник»)" htmlFor="userId">
               <TextSelect id="userId" name="userId" required>
                 <option value="">Выберите…</option>
                 {staffUsers.map((m) => (

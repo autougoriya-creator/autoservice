@@ -13,7 +13,7 @@ export default async function MyWorkPage({
 }: {
   searchParams: Promise<{ period?: string }>;
 }) {
-  const session = await requireStaffSession(["OWNER", "STAFF"]);
+  const session = await requireStaffSession(); // OWNER | ADMIN | STAFF
   const organizationId = orgIdOf(session);
   const sp = await searchParams;
   const period: PeriodKey = sp.period === "week" ? "week" : "day";
@@ -39,6 +39,23 @@ export default async function MyWorkPage({
             className="text-sm font-semibold text-[var(--accent)]"
           >
             Перейти к персоналу →
+          </Link>
+        </div>
+      );
+    }
+    if (session.membership.role === "ADMIN") {
+      return (
+        <div>
+          <SectionTitle
+            eyebrow="Моя смена"
+            title="Кабинет сотрудника"
+            description="У администратора нет профиля мойщика/слесаря. График и посты — в разделах «График» и «Рабочий стол»."
+          />
+          <Link
+            href="/owner/schedule"
+            className="text-sm font-semibold text-[var(--accent)]"
+          >
+            Открыть график →
           </Link>
         </div>
       );

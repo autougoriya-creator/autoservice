@@ -4,7 +4,7 @@ import { formatDateTime, bookingStatusLabel } from "@/lib/format";
 import { SectionTitle, StatusPill } from "@/components/ui";
 
 export default async function PostsBoardPage() {
-  const session = await requireSession(["OWNER", "STAFF"]);
+  const session = await requireSession(["OWNER", "ADMIN", "STAFF"]);
   const orgId = session.membership.organization.id;
 
   const posts = await prisma.servicePost.findMany({

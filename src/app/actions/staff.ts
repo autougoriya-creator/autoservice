@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { orgIdOf, requireStaffSession } from "@/lib/tenant";
+import {
+  orgIdOf,
+  requireManagementSession,
+  requireOwnerSession,
+} from "@/lib/tenant";
 
 function str(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -16,7 +20,7 @@ function intOr(formData: FormData, key: string, fallback = 0) {
 }
 
 export async function upsertStaffProfile(formData: FormData) {
-  const session = await requireStaffSession(["OWNER"]);
+  const session = await requireOwnerSession();
   const organizationId = orgIdOf(session);
   const id = str(formData, "id");
   const userId = str(formData, "userId");
@@ -69,7 +73,7 @@ export async function upsertStaffProfile(formData: FormData) {
 }
 
 export async function assignStaffToPost(formData: FormData) {
-  const session = await requireStaffSession(["OWNER"]);
+  const session = await requireOwnerSession();
   const organizationId = orgIdOf(session);
   const postId = str(formData, "postId");
   const staffProfileId = str(formData, "staffProfileId");
@@ -103,7 +107,7 @@ export async function assignStaffToPost(formData: FormData) {
 }
 
 export async function clearPostAssignment(formData: FormData) {
-  const session = await requireStaffSession(["OWNER"]);
+  const session = await requireOwnerSession();
   const organizationId = orgIdOf(session);
   const id = str(formData, "id");
   await prisma.postAssignment.updateMany({
@@ -116,7 +120,7 @@ export async function clearPostAssignment(formData: FormData) {
 }
 
 export async function createStaffShift(formData: FormData) {
-  const session = await requireStaffSession(["OWNER"]);
+  const session = await requireManagementSession();
   const organizationId = orgIdOf(session);
   const staffProfileId = str(formData, "staffProfileId");
   const postId = str(formData, "postId") || null;
@@ -152,7 +156,7 @@ export async function createStaffShift(formData: FormData) {
 }
 
 export async function deleteStaffShift(formData: FormData) {
-  const session = await requireStaffSession(["OWNER"]);
+  const session = await requireManagementSession();
   const organizationId = orgIdOf(session);
   const id = str(formData, "id");
   await prisma.staffShift.deleteMany({ where: { id, organizationId } });

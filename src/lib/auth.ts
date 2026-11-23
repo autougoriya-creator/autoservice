@@ -72,6 +72,7 @@ export async function requireSession(
 export function homeForRole(role: Role): string {
   switch (role) {
     case "OWNER":
+    case "ADMIN":
       return "/owner";
     case "STAFF":
       return "/owner/my-work";
@@ -86,26 +87,31 @@ export const DEMO_ACCOUNTS = [
   {
     email: "owner@demo.local",
     label: "Владелец",
-    description: "Дашборд, персонал, экономика",
+    description: "Полный доступ, ЗП и экономика",
+  },
+  {
+    email: "admin@demo.local",
+    label: "Администратор",
+    description: "Клиенты, стол, график, посты",
   },
   {
     email: "staff@demo.local",
-    label: "Мойщик",
-    description: "Смена и сделка 35%",
+    label: "Сотрудник",
+    description: "Мойщик · сделка 35%",
   },
   {
     email: "washer@demo.local",
-    label: "Мойщик 2",
-    description: "Смена и сделка 30%",
+    label: "Сотрудник",
+    description: "Мойщик · сделка 30%",
   },
   {
     email: "mechanic@demo.local",
-    label: "Слесарь",
-    description: "Смена и оклад",
+    label: "Сотрудник",
+    description: "Слесарь · оклад",
   },
   {
     email: "client@demo.local",
     label: "Клиент",
-    description: "История заказов",
+    description: "Личный кабинет",
   },
 ] as const;

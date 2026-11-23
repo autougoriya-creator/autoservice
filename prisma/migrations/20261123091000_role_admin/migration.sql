@@ -1,0 +1,2 @@
+-- Role.ADMIN added to Prisma Role enum.
+-- SQLite stores enum values as TEXT; no table rewrite required.

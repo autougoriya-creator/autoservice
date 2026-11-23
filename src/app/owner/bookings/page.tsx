@@ -4,7 +4,7 @@ import { bookingStatusLabel, formatDateTime } from "@/lib/format";
 import { EmptyStub, SectionTitle, StatusPill } from "@/components/ui";
 
 export default async function BookingsStubPage() {
-  const session = await requireSession(["OWNER", "STAFF"]);
+  const session = await requireSession(["OWNER", "ADMIN", "STAFF"]);
   const orgId = session.membership.organization.id;
 
   const bookings = await prisma.booking.findMany({
