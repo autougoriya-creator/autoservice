@@ -48,6 +48,7 @@ model Organization {
   memberships     Membership[]
   posts           ServicePost[]
   bookings        Booking[]
+  bookingLines    BookingLine[]
   orders          Order[]
   customers       Customer[]
   vehicles        Vehicle[]
@@ -166,24 +167,47 @@ model StaffShift {
 }
 
 model Booking {
-  id             String        @id @default(cuid())
-  organizationId String
-  clientId       String
-  postId         String?
-  serviceName    String
-  vehicleInfo    String?
-  startsAt       DateTime
-  durationMin    Int           @default(60)
-  status         BookingStatus @default(PENDING)
-  createdAt      DateTime      @default(now())
+  id               String        @id @default(cuid())
+  organizationId   String
+  clientId         String
+  postId           String?
+  /// Сводка услуг для списков / совместимости
+  serviceName      String
+  /// Плановая сумма записи, ₽ (из каталога, можно править)
+  plannedAmountRub Int           @default(0)
+  vehicleInfo      String?
+  startsAt         DateTime
+  durationMin      Int           @default(60)
+  status           BookingStatus @default(PENDING)
+  createdAt        DateTime      @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  client       User         @relation("ClientBookings", fields: [clientId], references: [id])
-  post         ServicePost? @relation(fields: [postId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       User          @relation("ClientBookings", fields: [clientId], references: [id])
+  post         ServicePost?  @relation(fields: [postId], references: [id])
+  lines        BookingLine[]
 
   @@index([organizationId, startsAt])
   @@index([clientId])
   @@index([postId, startsAt])
+}
+
+/// Строка услуги в записи (план)
+model BookingLine {
+  id             String  @id @default(cuid())
+  organizationId String
+  bookingId      String
+  serviceId      String?
+  name           String
+  priceRub       Int
+  durationMin    Int     @default(30)
+  quantity       Int     @default(1)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  booking      Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service      Service?     @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([organizationId])
 }
 
 /// Legacy stub history (kept for compatibility); ЛК prefers WorkOrder
@@ -260,6 +284,7 @@ model Service {
 
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   lines        WorkOrderLine[]
+  bookingLines BookingLine[]
 
   @@index([organizationId])
 }

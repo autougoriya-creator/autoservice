@@ -13,6 +13,7 @@ function navForRole(role: string) {
       links: [
         { href: "/owner", label: "Обзор" },
         { href: "/owner/desk", label: "Рабочий стол" },
+        { href: "/owner/planned", label: "План выручки" },
         { href: "/owner/pnl", label: "Экономика" },
         { href: "/owner/staff", label: "Персонал" },
         { href: "/owner/schedule", label: "График" },

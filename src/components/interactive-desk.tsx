@@ -102,6 +102,7 @@ export function InteractiveDesk({
   customers,
   services,
   readOnly = false,
+  showFinance = false,
 }: {
   dayIso: string;
   posts: Post[];
@@ -110,6 +111,8 @@ export function InteractiveDesk({
   services: ServiceOpt[];
   /** STAFF: view assigned posts only — no DnD / resize / create */
   readOnly?: boolean;
+  /** OWNER: show planned amounts on cards / details */
+  showFinance?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -477,6 +480,10 @@ export function InteractiveDesk({
                         <p className="mt-1 truncate text-[10px] font-medium opacity-75">
                           {formatClock(block.startsAt)} · {block.durationMin} мин ·{" "}
                           {statusText(block.kind, block.status)}
+                          {showFinance &&
+                          typeof block.plannedAmountRub === "number"
+                            ? ` · ${formatRub(block.plannedAmountRub)}`
+                            : ""}
                         </p>
                         {!readOnly && block.kind === "booking" ? (
                           <button
@@ -505,7 +512,9 @@ export function InteractiveDesk({
         <DetailPanel
           block={selected}
           posts={posts}
+          catalog={services}
           readOnly={readOnly}
+          showFinance={showFinance}
           onClose={() => setSelectedId(null)}
           onSaved={(next) => {
             setBlocks((prev) =>
@@ -524,6 +533,7 @@ export function InteractiveDesk({
           posts={posts}
           customers={customers}
           services={services}
+          showFinance={showFinance}
           onClose={() => setCreateDraft(null)}
           onCreated={(block) => {
             setBlocks((prev) => [...prev, block]);
@@ -558,17 +568,83 @@ function LoadBoardLegendStatic({ readOnly }: { readOnly?: boolean }) {
   );
 }
 
+type SelectedService = {
+  serviceId: string | null;
+  name: string;
+  priceRub: number;
+  durationMin: number;
+  quantity: number;
+};
+
+function catalogTotal(selected: SelectedService[]) {
+  return selected.reduce((s, l) => s + l.priceRub * l.quantity, 0);
+}
+
+function catalogDuration(selected: SelectedService[]) {
+  return Math.max(
+    15,
+    selected.reduce((s, l) => s + l.durationMin * l.quantity, 0),
+  );
+}
+
+function ServicePicker({
+  catalog,
+  selectedIds,
+  onToggle,
+}: {
+  catalog: ServiceOpt[];
+  selectedIds: Set<string>;
+  onToggle: (service: ServiceOpt) => void;
+}) {
+  if (catalog.length === 0) {
+    return (
+      <p className="text-sm text-[var(--ink-soft)]">
+        Нет услуг в прайсе. Добавьте их в справочнике.
+      </p>
+    );
+  }
+  return (
+    <ul className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-[var(--line)] bg-[var(--paper)]/50 p-3">
+      {catalog.map((s) => {
+        const on = selectedIds.has(s.id);
+        return (
+          <li key={s.id}>
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={on}
+                onChange={() => onToggle(s)}
+                className="mt-1"
+              />
+              <span className="flex-1">
+                <span className="font-medium text-[var(--ink)]">{s.name}</span>
+                <span className="mt-0.5 block text-xs text-[var(--ink-soft)]">
+                  {formatRub(s.priceRub)} · {s.durationMin} мин
+                </span>
+              </span>
+            </label>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function DetailPanel({
   block,
   posts,
+  catalog,
   readOnly = false,
+  showFinance = false,
   onClose,
   onSaved,
   onError,
 }: {
   block: DeskBlock;
   posts: Post[];
+  catalog: ServiceOpt[];
   readOnly?: boolean;
+  showFinance?: boolean;
   onClose: () => void;
   onSaved: (block: DeskBlock) => void;
   onError: (msg: string) => void;
@@ -577,8 +653,20 @@ function DetailPanel({
   const [startsLocal, setStartsLocal] = useState(localInputValue(block.startsAt));
   const [durationMin, setDurationMin] = useState(block.durationMin);
   const [status, setStatus] = useState(block.status);
-  const [serviceName, setServiceName] = useState(block.title);
   const [vehicleInfo, setVehicleInfo] = useState(block.vehicleInfo);
+  const [selected, setSelected] = useState<SelectedService[]>(() =>
+    (block.lineItems ?? []).map((l) => ({
+      serviceId: l.serviceId,
+      name: l.name,
+      priceRub: l.priceRub,
+      durationMin: l.durationMin,
+      quantity: l.quantity,
+    })),
+  );
+  const [plannedAmount, setPlannedAmount] = useState(
+    block.plannedAmountRub ?? 0,
+  );
+  const [amountTouched, setAmountTouched] = useState(false);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -586,13 +674,55 @@ function DetailPanel({
     setStartsLocal(localInputValue(block.startsAt));
     setDurationMin(block.durationMin);
     setStatus(block.status);
-    setServiceName(
-      block.kind === "booking"
-        ? block.services[0] ?? block.title
-        : block.title,
-    );
     setVehicleInfo(block.vehicleInfo);
+    const lines = (block.lineItems ?? []).map((l) => ({
+      serviceId: l.serviceId,
+      name: l.name,
+      priceRub: l.priceRub,
+      durationMin: l.durationMin,
+      quantity: l.quantity,
+    }));
+    setSelected(lines);
+    setPlannedAmount(block.plannedAmountRub ?? catalogTotal(lines));
+    setAmountTouched(false);
   }, [block]);
+
+  const selectedIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of selected) {
+      if (l.serviceId) set.add(l.serviceId);
+      else {
+        const match = catalog.find((c) => c.name === l.name);
+        if (match) set.add(match.id);
+      }
+    }
+    return set;
+  }, [selected, catalog]);
+
+  function toggleService(service: ServiceOpt) {
+    setSelected((prev) => {
+      const exists = prev.some(
+        (l) => l.serviceId === service.id || l.name === service.name,
+      );
+      const next = exists
+        ? prev.filter(
+            (l) => l.serviceId !== service.id && l.name !== service.name,
+          )
+        : [
+            ...prev,
+            {
+              serviceId: service.id,
+              name: service.name,
+              priceRub: service.priceRub,
+              durationMin: service.durationMin,
+              quantity: 1,
+            },
+          ];
+      setDurationMin(catalogDuration(next));
+      if (!amountTouched) setPlannedAmount(catalogTotal(next));
+      return next;
+    });
+  }
 
   async function save() {
     setPending(true);
@@ -603,14 +733,20 @@ function DetailPanel({
       return;
     }
     if (block.kind === "booking") {
+      if (selected.length === 0) {
+        onError("Выберите хотя бы одну услугу");
+        setPending(false);
+        return;
+      }
       const result = await updateDeskBooking({
         id: block.id,
         postId,
         startsAtIso: startsAt.toISOString(),
         durationMin,
         status,
-        serviceName,
         vehicleInfo,
+        plannedAmountRub: plannedAmount,
+        lines: selected,
       });
       setPending(false);
       if (!result.ok) {
@@ -623,10 +759,12 @@ function DetailPanel({
         startsAt: startsAt.toISOString(),
         durationMin: snapMinutes(durationMin),
         status,
-        title: serviceName,
-        services: [serviceName],
+        title: selected[0]?.name ?? block.title,
+        services: selected.map((l) => l.name),
         vehicleInfo,
         subtitle: vehicleInfo || block.clientName,
+        plannedAmountRub: plannedAmount,
+        lineItems: selected,
       });
     } else {
       const result = await updateDeskWorkOrder({
@@ -698,6 +836,12 @@ function DetailPanel({
             {statusText(block.kind, block.status)}
           </dd>
         </div>
+        {showFinance && typeof block.plannedAmountRub === "number" ? (
+          <div>
+            <dt className="text-xs text-[var(--ink-soft)]">План, ₽</dt>
+            <dd className="font-medium">{formatRub(block.plannedAmountRub)}</dd>
+          </div>
+        ) : null}
         <div className="sm:col-span-2">
           <dt className="text-xs text-[var(--ink-soft)]">Услуги</dt>
           <dd className="font-medium">{block.services.join(", ")}</dd>
@@ -746,6 +890,14 @@ function DetailPanel({
             </label>
             {block.kind === "booking" ? (
               <>
+                <div className="sm:col-span-2">
+                  <p className="mb-1.5 text-sm font-semibold">Услуги</p>
+                  <ServicePicker
+                    catalog={catalog}
+                    selectedIds={selectedIds}
+                    onToggle={toggleService}
+                  />
+                </div>
                 <label className="block text-sm">
                   <span className="mb-1.5 block font-semibold">
                     Длительность, мин
@@ -762,12 +914,23 @@ function DetailPanel({
                   />
                 </label>
                 <label className="block text-sm">
-                  <span className="mb-1.5 block font-semibold">Услуга</span>
+                  <span className="mb-1.5 block font-semibold">
+                    План суммы, ₽
+                  </span>
                   <input
-                    value={serviceName}
-                    onChange={(e) => setServiceName(e.target.value)}
+                    type="number"
+                    min={0}
+                    step={50}
+                    value={plannedAmount}
+                    onChange={(e) => {
+                      setAmountTouched(true);
+                      setPlannedAmount(Number(e.target.value) || 0);
+                    }}
                     className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
                   />
+                  <span className="mt-1 block text-xs text-[var(--ink-soft)]">
+                    По каталогу: {formatRub(catalogTotal(selected))}
+                  </span>
                 </label>
                 <label className="block text-sm sm:col-span-2">
                   <span className="mb-1.5 block font-semibold">
@@ -831,6 +994,7 @@ function CreatePanel({
   posts,
   customers,
   services,
+  showFinance = false,
   onClose,
   onCreated,
   onError,
@@ -840,6 +1004,7 @@ function CreatePanel({
   posts: Post[];
   customers: CustomerOpt[];
   services: ServiceOpt[];
+  showFinance?: boolean;
   onClose: () => void;
   onCreated: (block: DeskBlock) => void;
   onError: (msg: string) => void;
@@ -849,12 +1014,26 @@ function CreatePanel({
   const [startsLocal, setStartsLocal] = useState(
     localInputValue(dateFromDayOffset(day, draft.offsetMin).toISOString()),
   );
+  const [selected, setSelected] = useState<SelectedService[]>(() =>
+    defaultService
+      ? [
+          {
+            serviceId: defaultService.id,
+            name: defaultService.name,
+            priceRub: defaultService.priceRub,
+            durationMin: defaultService.durationMin,
+            quantity: 1,
+          },
+        ]
+      : [],
+  );
   const [durationMin, setDurationMin] = useState(
     defaultService?.durationMin ?? 60,
   );
-  const [serviceName, setServiceName] = useState(
-    defaultService?.name ?? "Комплексная мойка",
+  const [plannedAmount, setPlannedAmount] = useState(
+    defaultService?.priceRub ?? 0,
   );
+  const [amountTouched, setAmountTouched] = useState(false);
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
   const [mode, setMode] = useState<"existing" | "new">(
     customers.length ? "existing" : "new",
@@ -871,6 +1050,35 @@ function CreatePanel({
     );
   }, [draft, day, posts]);
 
+  const selectedIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of selected) {
+      if (l.serviceId) set.add(l.serviceId);
+    }
+    return set;
+  }, [selected]);
+
+  function toggleService(service: ServiceOpt) {
+    setSelected((prev) => {
+      const exists = prev.some((l) => l.serviceId === service.id);
+      const next = exists
+        ? prev.filter((l) => l.serviceId !== service.id)
+        : [
+            ...prev,
+            {
+              serviceId: service.id,
+              name: service.name,
+              priceRub: service.priceRub,
+              durationMin: service.durationMin,
+              quantity: 1,
+            },
+          ];
+      setDurationMin(catalogDuration(next));
+      if (!amountTouched) setPlannedAmount(catalogTotal(next));
+      return next;
+    });
+  }
+
   async function submit() {
     setPending(true);
     const startsAt = new Date(startsLocal);
@@ -879,11 +1087,17 @@ function CreatePanel({
       setPending(false);
       return;
     }
+    if (selected.length === 0) {
+      onError("Выберите хотя бы одну услугу");
+      setPending(false);
+      return;
+    }
     const result = await createDeskBooking({
       postId,
       startsAtIso: startsAt.toISOString(),
       durationMin,
-      serviceName,
+      plannedAmountRub: plannedAmount,
+      lines: selected,
       customerId: mode === "existing" ? customerId : undefined,
       newCustomerName: mode === "new" ? newName : undefined,
       newCustomerPhone: mode === "new" ? newPhone : undefined,
@@ -898,18 +1112,21 @@ function CreatePanel({
       mode === "existing"
         ? (customers.find((c) => c.id === customerId)?.name ?? "Клиент")
         : newName.trim() || "Клиент";
+    const names = result.services ?? selected.map((l) => l.name);
     onCreated({
       id: result.id,
       kind: "booking",
       postId,
-      title: serviceName,
+      title: names[0] ?? "Услуга",
       subtitle: vehicleInfo || customerName,
       startsAt: startsAt.toISOString(),
-      durationMin: snapMinutes(durationMin),
+      durationMin: result.durationMin ?? snapMinutes(durationMin),
       status: "CONFIRMED",
       clientName: customerName,
       vehicleInfo,
-      services: [serviceName],
+      services: names,
+      plannedAmountRub: result.plannedAmountRub ?? plannedAmount,
+      lineItems: selected,
     });
   }
 
@@ -1019,28 +1236,16 @@ function CreatePanel({
             className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
           />
         </label>
-        <label className="block text-sm">
-          <span className="mb-1.5 block font-semibold">Услуга</span>
-          <select
-            value={serviceName}
-            onChange={(e) => {
-              const s = services.find((x) => x.name === e.target.value);
-              setServiceName(e.target.value);
-              if (s) setDurationMin(s.durationMin);
-            }}
-            className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-          >
-            {services.length === 0 ? (
-              <option value={serviceName}>{serviceName}</option>
-            ) : (
-              services.map((s) => (
-                <option key={s.id} value={s.name}>
-                  {s.name} · {formatRub(s.priceRub)} · {s.durationMin} мин
-                </option>
-              ))
-            )}
-          </select>
-        </label>
+
+        <div className="sm:col-span-2">
+          <p className="mb-1.5 text-sm font-semibold">Услуги</p>
+          <ServicePicker
+            catalog={services}
+            selectedIds={selectedIds}
+            onToggle={toggleService}
+          />
+        </div>
+
         <label className="block text-sm">
           <span className="mb-1.5 block font-semibold">Длительность, мин</span>
           <input
@@ -1051,6 +1256,24 @@ function CreatePanel({
             onChange={(e) => setDurationMin(Number(e.target.value) || 15)}
             className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
           />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1.5 block font-semibold">План суммы, ₽</span>
+          <input
+            type="number"
+            min={0}
+            step={50}
+            value={plannedAmount}
+            onChange={(e) => {
+              setAmountTouched(true);
+              setPlannedAmount(Number(e.target.value) || 0);
+            }}
+            className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+          />
+          <span className="mt-1 block text-xs text-[var(--ink-soft)]">
+            По каталогу: {formatRub(catalogTotal(selected))}
+            {showFinance ? "" : " · сумма сохраняется в записи"}
+          </span>
         </label>
         <label className="block text-sm sm:col-span-2">
           <span className="mb-1.5 block font-semibold">Авто / госномер</span>
