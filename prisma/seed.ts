@@ -3,11 +3,15 @@ import {
   Role,
   BookingStatus,
   WorkOrderStatus,
+  PayMode,
 } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
 async function main() {
+  await prisma.staffShift.deleteMany();
+  await prisma.postAssignment.deleteMany();
+  await prisma.staffProfile.deleteMany();
   await prisma.workOrderLine.deleteMany();
   await prisma.workOrder.deleteMany();
   await prisma.service.deleteMany();
@@ -44,6 +48,22 @@ async function main() {
     },
   });
 
+  const washer = await prisma.user.create({
+    data: {
+      email: "washer@demo.local",
+      name: "Павел Мойщиков",
+      phone: "+7 (900) 444-55-66",
+    },
+  });
+
+  const mechanic = await prisma.user.create({
+    data: {
+      email: "mechanic@demo.local",
+      name: "Дмитрий Слесарев",
+      phone: "+7 (900) 777-88-99",
+    },
+  });
+
   const clientUser = await prisma.user.create({
     data: {
       email: "client@demo.local",
@@ -56,6 +76,8 @@ async function main() {
     data: [
       { organizationId: org.id, userId: owner.id, role: Role.OWNER },
       { organizationId: org.id, userId: staff.id, role: Role.STAFF },
+      { organizationId: org.id, userId: washer.id, role: Role.STAFF },
+      { organizationId: org.id, userId: mechanic.id, role: Role.STAFF },
       { organizationId: org.id, userId: clientUser.id, role: Role.CLIENT },
     ],
   });
@@ -436,12 +458,95 @@ async function main() {
     ],
   });
 
+  const profileSergey = await prisma.staffProfile.create({
+    data: {
+      organizationId: org.id,
+      userId: staff.id,
+      title: "Старший мойщик",
+      payMode: PayMode.DEAL,
+      dealPercent: 35,
+      salaryRub: 0,
+    },
+  });
+
+  const profilePavel = await prisma.staffProfile.create({
+    data: {
+      organizationId: org.id,
+      userId: washer.id,
+      title: "Мойщик",
+      payMode: PayMode.DEAL,
+      dealPercent: 30,
+      salaryRub: 0,
+    },
+  });
+
+  const profileDmitry = await prisma.staffProfile.create({
+    data: {
+      organizationId: org.id,
+      userId: mechanic.id,
+      title: "Слесарь / детейлер",
+      payMode: PayMode.SALARY,
+      dealPercent: 0,
+      salaryRub: 90000,
+    },
+  });
+
+  await prisma.postAssignment.createMany({
+    data: [
+      {
+        organizationId: org.id,
+        postId: posts[0].id,
+        staffProfileId: profileSergey.id,
+      },
+      {
+        organizationId: org.id,
+        postId: posts[1].id,
+        staffProfileId: profilePavel.id,
+      },
+      {
+        organizationId: org.id,
+        postId: posts[2].id,
+        staffProfileId: profileDmitry.id,
+      },
+    ],
+  });
+
+  const shift = (profileId: string, postId: string, hourStart: number, hourEnd: number, dayOffset = 0) => {
+    const startsAt = new Date(today);
+    startsAt.setDate(startsAt.getDate() + dayOffset);
+    startsAt.setHours(hourStart, 0, 0, 0);
+    const endsAt = new Date(today);
+    endsAt.setDate(endsAt.getDate() + dayOffset);
+    endsAt.setHours(hourEnd, 0, 0, 0);
+    return {
+      organizationId: org.id,
+      staffProfileId: profileId,
+      postId,
+      startsAt,
+      endsAt,
+    };
+  };
+
+  await prisma.staffShift.createMany({
+    data: [
+      shift(profileSergey.id, posts[0].id, 8, 16, 0),
+      shift(profileSergey.id, posts[0].id, 8, 16, 1),
+      shift(profilePavel.id, posts[1].id, 10, 18, 0),
+      shift(profilePavel.id, posts[1].id, 10, 18, -1),
+      shift(profileDmitry.id, posts[2].id, 9, 18, 0),
+      shift(profileDmitry.id, posts[2].id, 9, 18, 2),
+      shift(profileDmitry.id, posts[2].id, 9, 15, -2),
+    ],
+  });
+
   console.log("Seed OK");
   console.log("Demo tenant:", org.name, `(${org.slug})`);
   console.log("Logins (mock auth, no password):");
-  console.log("  owner@demo.local  → кабинет владельца");
-  console.log("  staff@demo.local  → кабинет персонала");
-  console.log("  client@demo.local → личный кабинет клиента");
+  console.log("  owner@demo.local     → кабинет владельца");
+  console.log("  staff@demo.local     → персонал (сделка 35%)");
+  console.log("  washer@demo.local    → мойщик (сделка 30%)");
+  console.log("  mechanic@demo.local  → слесарь (оклад)");
+  console.log("  client@demo.local    → личный кабинет клиента");
 }
 
 main()
