@@ -41,7 +41,7 @@ export async function loadBoardOccupancy(
           organizationId,
           startsAt: { gte: dayStart, lte: dayEnd },
         },
-        include: { client: true },
+        include: { client: true, lines: true },
         orderBy: { startsAt: "asc" },
       }),
       prisma.workOrder.findMany({
@@ -94,20 +94,36 @@ export async function loadBoardOccupancy(
     );
 
   const blocks: BoardBlock[] = [
-    ...bookings.map((b) => ({
-      id: b.id,
-      kind: "booking" as const,
-      postId: b.postId as string,
-      title: b.serviceName,
-      subtitle: b.vehicleInfo ?? b.client.name ?? "Клиент",
-      startsAt: b.startsAt,
-      durationMin: b.durationMin ?? 60,
-      status: String(b.status),
-      href: "/owner/bookings",
-      clientName: b.client.name,
-      vehicleInfo: b.vehicleInfo ?? "",
-      services: [b.serviceName],
-    })),
+    ...bookings.map((b) => {
+      const serviceNames =
+        b.lines.length > 0
+          ? b.lines.map((l) => l.name)
+          : b.serviceName
+            ? [b.serviceName]
+            : ["Услуга"];
+      return {
+        id: b.id,
+        kind: "booking" as const,
+        postId: b.postId as string,
+        title: serviceNames[0] ?? b.serviceName,
+        subtitle: b.vehicleInfo ?? b.client.name ?? "Клиент",
+        startsAt: b.startsAt,
+        durationMin: b.durationMin ?? 60,
+        status: String(b.status),
+        href: "/owner/bookings",
+        clientName: b.client.name,
+        vehicleInfo: b.vehicleInfo ?? "",
+        services: serviceNames,
+        plannedAmountRub: b.plannedAmountRub,
+        lineItems: b.lines.map((l) => ({
+          serviceId: l.serviceId,
+          name: l.name,
+          priceRub: l.priceRub,
+          durationMin: l.durationMin,
+          quantity: l.quantity,
+        })),
+      };
+    }),
     ...workOrders.map((wo) => ({
       id: wo.id,
       kind: "work_order" as const,
@@ -122,12 +138,22 @@ export async function loadBoardOccupancy(
       vehicleInfo: `${wo.vehicle.make} ${wo.vehicle.model} · ${wo.vehicle.plate}`,
       services: wo.lines.map((l) => l.name),
       workOrderNumber: wo.number,
+      plannedAmountRub: wo.lines.reduce(
+        (s, l) => s + l.priceRub * l.quantity,
+        0,
+      ),
     })),
   ];
+
+  const bookingPlannedTotal = bookings.reduce(
+    (sum, b) => sum + (b.plannedAmountRub || 0),
+    0,
+  );
 
   return {
     posts,
     blocks,
+    bookingPlannedTotal,
     customers: customers.map((c) => ({
       id: c.id,
       name: c.name,

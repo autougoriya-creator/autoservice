@@ -1,11 +1,17 @@
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { bookingStatusLabel, formatDateTime } from "@/lib/format";
+import {
+  bookingStatusLabel,
+  formatDateTime,
+  formatRub,
+} from "@/lib/format";
+import { isOwner } from "@/lib/tenant";
 import { EmptyStub, SectionTitle, StatusPill } from "@/components/ui";
 
 export default async function BookingsStubPage() {
   const session = await requireSession(["OWNER", "ADMIN", "STAFF"]);
   const orgId = session.membership.organization.id;
+  const showFinance = isOwner(session);
 
   const bookings = await prisma.booking.findMany({
     where: { organizationId: orgId },
@@ -18,7 +24,7 @@ export default async function BookingsStubPage() {
       <SectionTitle
         eyebrow="Запись"
         title="Расписание визитов"
-        description="Каркас экрана записи: список демо-визитов. Создание слотов и онлайн-запись появятся позже."
+        description="Список записей с услугами. Создание и правка — на рабочем столе."
       />
 
       {bookings.length === 0 ? (
@@ -39,6 +45,9 @@ export default async function BookingsStubPage() {
                 <th className="hidden px-4 py-3 font-semibold md:table-cell">
                   Пост
                 </th>
+                {showFinance ? (
+                  <th className="px-4 py-3 font-semibold">План</th>
+                ) : null}
                 <th className="px-4 py-3 font-semibold">Статус</th>
               </tr>
             </thead>
@@ -64,6 +73,11 @@ export default async function BookingsStubPage() {
                   <td className="hidden px-4 py-4 text-[var(--ink-soft)] md:table-cell">
                     {booking.post?.name ?? "—"}
                   </td>
+                  {showFinance ? (
+                    <td className="px-4 py-4 font-medium">
+                      {formatRub(booking.plannedAmountRub)}
+                    </td>
+                  ) : null}
                   <td className="px-4 py-4">
                     <StatusPill
                       tone={

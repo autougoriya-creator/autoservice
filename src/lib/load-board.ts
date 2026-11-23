@@ -21,6 +21,14 @@ export type BoardBlock = {
   vehicleInfo: string;
   services: string[];
   workOrderNumber?: number;
+  plannedAmountRub?: number;
+  lineItems?: {
+    serviceId: string | null;
+    name: string;
+    priceRub: number;
+    durationMin: number;
+    quantity: number;
+  }[];
 };
 
 /** Serializable block for client components */
@@ -37,6 +45,14 @@ export type DeskBlock = {
   vehicleInfo: string;
   services: string[];
   workOrderNumber?: number;
+  plannedAmountRub?: number;
+  lineItems?: {
+    serviceId: string | null;
+    name: string;
+    priceRub: number;
+    durationMin: number;
+    quantity: number;
+  }[];
 };
 
 export function toDeskBlock(block: BoardBlock): DeskBlock {
@@ -53,6 +69,8 @@ export function toDeskBlock(block: BoardBlock): DeskBlock {
     vehicleInfo: block.vehicleInfo,
     services: block.services,
     workOrderNumber: block.workOrderNumber,
+    plannedAmountRub: block.plannedAmountRub,
+    lineItems: block.lineItems,
   };
 }
 

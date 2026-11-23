@@ -63,7 +63,7 @@ export default async function OwnerDashboardPage() {
         />
         <Metric label="Рабочий стол" value="→" href="/owner/desk" />
         {owner ? (
-          <Metric label="Экономика постов" value="→" href="/owner/pnl" />
+          <Metric label="План выручки" value="→" href="/owner/planned" />
         ) : (
           <Metric label="График смен" value="→" href="/owner/schedule" />
         )}

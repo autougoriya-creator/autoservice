@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { isStaff, orgIdOf, requireStaffSession } from "@/lib/tenant";
+import { formatRub } from "@/lib/format";
+import { isOwner, isStaff, orgIdOf, requireStaffSession } from "@/lib/tenant";
 import {
   addDays,
   endOfLocalDay,
@@ -21,6 +22,7 @@ export default async function ManagerDeskPage({
   const session = await requireStaffSession();
   const organizationId = orgIdOf(session);
   const staffView = isStaff(session);
+  const ownerFinance = isOwner(session);
   const { date: dateParam } = await searchParams;
   const day = parseBoardDate(dateParam);
   const dayStart = startOfLocalDay(day);
@@ -54,12 +56,13 @@ export default async function ManagerDeskPage({
     staffPostIds = profile?.assignments.map((a) => a.postId) ?? [];
   }
 
-  const { posts, blocks, customers, services } = await loadBoardOccupancy(
-    organizationId,
-    dayStart,
-    dayEnd,
-    staffView ? { postIds: staffPostIds ?? [] } : undefined,
-  );
+  const { posts, blocks, customers, services, bookingPlannedTotal } =
+    await loadBoardOccupancy(
+      organizationId,
+      dayStart,
+      dayEnd,
+      staffView ? { postIds: staffPostIds ?? [] } : undefined,
+    );
 
   const occupied = blocks.length;
   const freePosts = posts.filter(
@@ -115,6 +118,20 @@ export default async function ManagerDeskPage({
               <span className="font-semibold text-[var(--teal)]">только просмотр</span>
             </>
           ) : null}
+          {ownerFinance ? (
+            <>
+              <span className="mx-2">·</span>
+              <span className="font-semibold text-[var(--ink)]">
+                план записей {formatRub(bookingPlannedTotal)}
+              </span>
+              <Link
+                href="/owner/planned"
+                className="ml-2 text-sm font-semibold text-[var(--accent)]"
+              >
+                План выручки →
+              </Link>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -134,6 +151,7 @@ export default async function ManagerDeskPage({
           customers={customers}
           services={services}
           readOnly={staffView}
+          showFinance={ownerFinance}
         />
       )}
     </div>

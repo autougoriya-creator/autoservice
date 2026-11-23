@@ -14,11 +14,12 @@ async function main() {
   await prisma.staffProfile.deleteMany();
   await prisma.workOrderLine.deleteMany();
   await prisma.workOrder.deleteMany();
+  await prisma.bookingLine.deleteMany();
+  await prisma.booking.deleteMany();
   await prisma.service.deleteMany();
   await prisma.vehicle.deleteMany();
   await prisma.customer.deleteMany();
   await prisma.order.deleteMany();
-  await prisma.booking.deleteMany();
   await prisma.servicePost.deleteMany();
   await prisma.membership.deleteMany();
   await prisma.user.deleteMany();
@@ -205,140 +206,147 @@ async function main() {
   const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
   tomorrow.setHours(10, 0, 0, 0);
 
-  // Dense day occupancy across posts for the load board
-  await prisma.booking.createMany({
-    data: [
-      {
+  const svc = Object.fromEntries(services.map((s) => [s.name, s]));
+
+  async function seedBooking(opts: {
+    postId: string;
+    startsAt: Date;
+    status: BookingStatus;
+    vehicleInfo: string;
+    serviceNames: string[];
+    /** optional override of catalog sum */
+    plannedAmountRub?: number;
+    durationMin?: number;
+  }) {
+    const lines = opts.serviceNames.map((name) => {
+      const s = svc[name];
+      return {
+        organizationId: org.id,
+        serviceId: s?.id ?? null,
+        name,
+        priceRub: s?.priceRub ?? 0,
+        durationMin: s?.durationMin ?? 30,
+        quantity: 1,
+      };
+    });
+    const plannedAmountRub =
+      opts.plannedAmountRub ??
+      lines.reduce((sum, l) => sum + l.priceRub * l.quantity, 0);
+    const durationMin =
+      opts.durationMin ??
+      Math.max(
+        15,
+        lines.reduce((sum, l) => sum + l.durationMin * l.quantity, 0),
+      );
+    const serviceName = opts.serviceNames.join(", ");
+    await prisma.booking.create({
+      data: {
         organizationId: org.id,
         clientId: clientUser.id,
-        postId: posts[0].id,
-        serviceName: "Экспресс-мойка",
-        vehicleInfo: "Toyota Camry · А123ВС777",
-        startsAt: at(8, 0),
-        durationMin: 30,
-        status: BookingStatus.DONE,
+        postId: opts.postId,
+        serviceName,
+        plannedAmountRub,
+        vehicleInfo: opts.vehicleInfo,
+        startsAt: opts.startsAt,
+        durationMin,
+        status: opts.status,
+        lines: { create: lines },
       },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[0].id,
-        serviceName: "Комплексная мойка",
-        vehicleInfo: "Kia Sportage · К456ОР777",
-        startsAt: at(9, 0),
-        durationMin: 60,
-        status: BookingStatus.IN_PROGRESS,
-      },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[0].id,
-        serviceName: "Комплексная мойка",
-        vehicleInfo: "Toyota Camry · А123ВС777",
-        startsAt: at(11, 0),
-        durationMin: 45,
-        status: BookingStatus.CONFIRMED,
-      },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[0].id,
-        serviceName: "Пылесос салона",
-        vehicleInfo: "Lada Vesta · В321АА50",
-        startsAt: at(14, 0),
-        durationMin: 30,
-        status: BookingStatus.CONFIRMED,
-      },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[0].id,
-        serviceName: "Экспресс-мойка",
-        vehicleInfo: "Toyota Camry · А123ВС777",
-        startsAt: at(16, 30),
-        durationMin: 30,
-        status: BookingStatus.PENDING,
-      },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[1].id,
-        serviceName: "Комплексная мойка",
-        vehicleInfo: "Volkswagen Polo · М789ТУ199",
-        startsAt: at(8, 30),
-        durationMin: 60,
-        status: BookingStatus.DONE,
-      },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[1].id,
-        serviceName: "Мойка двигателя",
-        vehicleInfo: "Kia Sportage · К456ОР777",
-        startsAt: at(10, 30),
-        durationMin: 45,
-        status: BookingStatus.CONFIRMED,
-      },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[1].id,
-        serviceName: "Экспресс-мойка",
-        vehicleInfo: "Lada Vesta · В321АА50",
-        startsAt: at(13, 0),
-        durationMin: 30,
-        status: BookingStatus.CONFIRMED,
-      },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[1].id,
-        serviceName: "Комплексная мойка",
-        vehicleInfo: "Volkswagen Polo · М789ТУ199",
-        startsAt: at(15, 0),
-        durationMin: 60,
-        status: BookingStatus.PENDING,
-      },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[1].id,
-        serviceName: "Экспресс-мойка",
-        vehicleInfo: "Toyota Camry · А123ВС777",
-        startsAt: at(18, 0),
-        durationMin: 30,
-        status: BookingStatus.PENDING,
-      },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[2].id,
-        serviceName: "Химчистка салона",
-        vehicleInfo: "Toyota Camry · А123ВС777",
-        startsAt: at(9, 0),
-        durationMin: 180,
-        status: BookingStatus.IN_PROGRESS,
-      },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[2].id,
-        serviceName: "Полировка кузова",
-        vehicleInfo: "Volkswagen Polo · М789ТУ199",
-        startsAt: at(15, 0),
-        durationMin: 180,
-        status: BookingStatus.CONFIRMED,
-      },
-      {
-        organizationId: org.id,
-        clientId: clientUser.id,
-        postId: posts[2].id,
-        serviceName: "Полировка кузова",
-        vehicleInfo: "Toyota Camry · А123ВС777",
-        startsAt: tomorrow,
-        durationMin: 240,
-        status: BookingStatus.PENDING,
-      },
-    ],
+    });
+  }
+
+  // Dense day occupancy with catalog prices for план выручки
+  await seedBooking({
+    postId: posts[0].id,
+    startsAt: at(8, 0),
+    status: BookingStatus.DONE,
+    vehicleInfo: "Toyota Camry · А123ВС777",
+    serviceNames: ["Экспресс-мойка"],
+  });
+  await seedBooking({
+    postId: posts[0].id,
+    startsAt: at(9, 0),
+    status: BookingStatus.IN_PROGRESS,
+    vehicleInfo: "Kia Sportage · К456ОР777",
+    serviceNames: ["Комплексная мойка", "Пылесос салона"],
+  });
+  await seedBooking({
+    postId: posts[0].id,
+    startsAt: at(11, 0),
+    status: BookingStatus.CONFIRMED,
+    vehicleInfo: "Toyota Camry · А123ВС777",
+    serviceNames: ["Комплексная мойка"],
+  });
+  await seedBooking({
+    postId: posts[0].id,
+    startsAt: at(14, 0),
+    status: BookingStatus.CONFIRMED,
+    vehicleInfo: "Lada Vesta · В321АА50",
+    serviceNames: ["Пылесос салона"],
+  });
+  await seedBooking({
+    postId: posts[0].id,
+    startsAt: at(16, 30),
+    status: BookingStatus.PENDING,
+    vehicleInfo: "Toyota Camry · А123ВС777",
+    serviceNames: ["Экспресс-мойка"],
+  });
+  await seedBooking({
+    postId: posts[1].id,
+    startsAt: at(8, 30),
+    status: BookingStatus.DONE,
+    vehicleInfo: "Volkswagen Polo · М789ТУ199",
+    serviceNames: ["Комплексная мойка"],
+  });
+  await seedBooking({
+    postId: posts[1].id,
+    startsAt: at(10, 30),
+    status: BookingStatus.CONFIRMED,
+    vehicleInfo: "Kia Sportage · К456ОР777",
+    serviceNames: ["Мойка двигателя"],
+  });
+  await seedBooking({
+    postId: posts[1].id,
+    startsAt: at(13, 0),
+    status: BookingStatus.CONFIRMED,
+    vehicleInfo: "Lada Vesta · В321АА50",
+    serviceNames: ["Экспресс-мойка"],
+  });
+  await seedBooking({
+    postId: posts[1].id,
+    startsAt: at(15, 0),
+    status: BookingStatus.PENDING,
+    vehicleInfo: "Volkswagen Polo · М789ТУ199",
+    serviceNames: ["Комплексная мойка", "Экспресс-мойка"],
+    plannedAmountRub: 1700,
+  });
+  await seedBooking({
+    postId: posts[1].id,
+    startsAt: at(18, 0),
+    status: BookingStatus.PENDING,
+    vehicleInfo: "Toyota Camry · А123ВС777",
+    serviceNames: ["Экспресс-мойка"],
+  });
+  await seedBooking({
+    postId: posts[2].id,
+    startsAt: at(9, 0),
+    status: BookingStatus.IN_PROGRESS,
+    vehicleInfo: "Toyota Camry · А123ВС777",
+    serviceNames: ["Химчистка салона"],
+  });
+  await seedBooking({
+    postId: posts[2].id,
+    startsAt: at(15, 0),
+    status: BookingStatus.CONFIRMED,
+    vehicleInfo: "Volkswagen Polo · М789ТУ199",
+    serviceNames: ["Полировка кузова"],
+  });
+  await seedBooking({
+    postId: posts[2].id,
+    startsAt: tomorrow,
+    status: BookingStatus.PENDING,
+    vehicleInfo: "Toyota Camry · А123ВС777",
+    serviceNames: ["Полировка кузова", "Мойка двигателя"],
   });
 
   async function createWorkOrder(opts: {
