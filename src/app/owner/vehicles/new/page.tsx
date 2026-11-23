@@ -1,0 +1,104 @@
+import Link from "next/link";
+import { createVehicle } from "@/app/actions/directories";
+import { prisma } from "@/lib/prisma";
+import { orgIdOf, requireStaffSession } from "@/lib/tenant";
+import { SectionTitle, SubmitButton } from "@/components/ui";
+import {
+  Field,
+  FormActions,
+  FormCard,
+  TextInput,
+  TextSelect,
+} from "@/components/forms";
+
+export default async function NewVehiclePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ customerId?: string }>;
+}) {
+  const session = await requireStaffSession();
+  const organizationId = orgIdOf(session);
+  const { customerId } = await searchParams;
+
+  const customers = await prisma.customer.findMany({
+    where: { organizationId },
+    orderBy: { name: "asc" },
+  });
+
+  return (
+    <div className="max-w-xl">
+      <SectionTitle
+        eyebrow="Справочник"
+        title="Новое авто"
+        description="Выберите клиента и укажите марку, модель и госномер."
+      />
+
+      <FormCard>
+        {customers.length === 0 ? (
+          <p className="text-sm text-[var(--ink-soft)]">
+            Сначала{" "}
+            <Link href="/owner/clients/new" className="font-semibold text-[var(--accent)]">
+              создайте клиента
+            </Link>
+            .
+          </p>
+        ) : (
+          <form action={createVehicle} className="space-y-4">
+            <Field label="Клиент" htmlFor="customerId">
+              <TextSelect
+                id="customerId"
+                name="customerId"
+                required
+                defaultValue={customerId ?? customers[0]?.id}
+              >
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.phone ? ` · ${c.phone}` : ""}
+                  </option>
+                ))}
+              </TextSelect>
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Марка" htmlFor="make">
+                <TextInput id="make" name="make" required placeholder="Toyota" />
+              </Field>
+              <Field label="Модель" htmlFor="model">
+                <TextInput id="model" name="model" required placeholder="Camry" />
+              </Field>
+            </div>
+            <Field label="Госномер" htmlFor="plate">
+              <TextInput
+                id="plate"
+                name="plate"
+                required
+                placeholder="А123ВС777"
+                className="uppercase"
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Год" htmlFor="year">
+                <TextInput id="year" name="year" inputMode="numeric" placeholder="2021" />
+              </Field>
+              <Field label="Цвет" htmlFor="color">
+                <TextInput id="color" name="color" placeholder="Чёрный" />
+              </Field>
+            </div>
+            <Field label="VIN" htmlFor="vin">
+              <TextInput id="vin" name="vin" placeholder="Необязательно" />
+            </Field>
+            <FormActions>
+              <Link
+                href="/owner/vehicles"
+                className="inline-flex items-center justify-center rounded-md border border-[var(--line)] px-5 py-3 text-sm font-semibold"
+              >
+                Отмена
+              </Link>
+              <SubmitButton className="sm:w-auto">Сохранить</SubmitButton>
+            </FormActions>
+          </form>
+        )}
+      </FormCard>
+    </div>
+  );
+}

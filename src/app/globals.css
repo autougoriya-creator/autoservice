@@ -131,3 +131,13 @@ a {
 .animate-pulse-soft {
   animation: pulse-soft 2.4s ease-in-out infinite;
 }
+
+@media print {
+  body {
+    background: white !important;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+}

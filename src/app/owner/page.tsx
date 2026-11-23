@@ -1,107 +1,105 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { formatDateTime, bookingStatusLabel } from "@/lib/format";
+import {
+  formatDateTime,
+  formatRub,
+  workOrderStatusLabel,
+  workOrderStatusTone,
+} from "@/lib/format";
+import {
+  workOrderNumberLabel,
+  workOrderTotal,
+} from "@/lib/work-order";
 import { SectionTitle, StatusPill } from "@/components/ui";
 
 export default async function OwnerDashboardPage() {
   const session = await requireSession(["OWNER", "STAFF"]);
   const orgId = session.membership.organization.id;
 
-  const [postsCount, bookingsToday, recentBookings, clientsCount] =
-    await Promise.all([
-      prisma.servicePost.count({
-        where: { organizationId: orgId, isActive: true },
-      }),
-      prisma.booking.count({
-        where: {
-          organizationId: orgId,
-          startsAt: {
-            gte: startOfDay(new Date()),
-            lt: endOfDay(new Date()),
-          },
-        },
-      }),
-      prisma.booking.findMany({
-        where: { organizationId: orgId },
-        include: { client: true, post: true },
-        orderBy: { startsAt: "asc" },
-        take: 5,
-      }),
-      prisma.membership.count({
-        where: { organizationId: orgId, role: "CLIENT" },
-      }),
-    ]);
+  const [
+    customersCount,
+    servicesCount,
+    openWorkOrders,
+    recentWorkOrders,
+  ] = await Promise.all([
+    prisma.customer.count({ where: { organizationId: orgId } }),
+    prisma.service.count({ where: { organizationId: orgId, isActive: true } }),
+    prisma.workOrder.count({
+      where: {
+        organizationId: orgId,
+        status: { in: ["OPEN", "IN_PROGRESS"] },
+      },
+    }),
+    prisma.workOrder.findMany({
+      where: { organizationId: orgId },
+      include: { customer: true, vehicle: true, lines: true },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+  ]);
 
   return (
     <div>
       <SectionTitle
         eyebrow="Операции"
         title="Обзор точки"
-        description={`Добро пожаловать, ${session.name}. Здесь будет сводка по загрузке, записи и клиентам.`}
+        description={`Добро пожаловать, ${session.name}. Справочники, заказ-наряды и текущая загрузка.`}
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
+        <Metric label="Клиенты" value={String(customersCount)} href="/owner/clients" />
+        <Metric label="Услуги в прайсе" value={String(servicesCount)} href="/owner/services" />
         <Metric
-          label="Активные посты"
-          value={String(postsCount)}
-          href="/owner/posts"
+          label="Активные заказ-наряды"
+          value={String(openWorkOrders)}
+          href="/owner/work-orders"
         />
-        <Metric
-          label="Записи на сегодня"
-          value={String(bookingsToday)}
-          href="/owner/bookings"
-        />
-        <Metric label="Клиенты тенанта" value={String(clientsCount)} />
       </div>
 
       <section className="mt-10">
         <div className="mb-4 flex items-end justify-between gap-4">
-          <h2 className="brand-mark text-xl text-[var(--ink)]">Ближайшая запись</h2>
+          <h2 className="brand-mark text-xl text-[var(--ink)]">Последние заказ-наряды</h2>
           <Link
-            href="/owner/bookings"
+            href="/owner/work-orders"
             className="text-sm font-semibold text-[var(--accent)] hover:text-[var(--accent-deep)]"
           >
-            Вся запись
+            Все документы
           </Link>
         </div>
 
         <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-white/80">
-          {recentBookings.length === 0 ? (
+          {recentWorkOrders.length === 0 ? (
             <p className="px-5 py-8 text-sm text-[var(--ink-soft)]">
-              Записей пока нет.
+              Заказ-нарядов пока нет.{" "}
+              <Link href="/owner/work-orders/new" className="font-semibold text-[var(--accent)]">
+                Создать
+              </Link>
             </p>
           ) : (
             <ul className="divide-y divide-[var(--line)]">
-              {recentBookings.map((booking) => (
+              {recentWorkOrders.map((wo) => (
                 <li
-                  key={booking.id}
+                  key={wo.id}
                   className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
-                    <p className="font-semibold text-[var(--ink)]">
-                      {booking.serviceName}
-                    </p>
+                    <Link
+                      href={`/owner/work-orders/${wo.id}`}
+                      className="font-semibold text-[var(--ink)] hover:text-[var(--accent)]"
+                    >
+                      {workOrderNumberLabel(wo.number)} · {wo.customer.name}
+                    </Link>
                     <p className="mt-1 text-sm text-[var(--ink-soft)]">
-                      {booking.client.name}
-                      {booking.vehicleInfo ? ` · ${booking.vehicleInfo}` : ""}
-                      {booking.post ? ` · ${booking.post.name}` : ""}
+                      {wo.vehicle.plate} · {formatRub(workOrderTotal(wo.lines))}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-[var(--ink-soft)]">
-                      {formatDateTime(booking.startsAt)}
+                      {formatDateTime(wo.createdAt)}
                     </span>
-                    <StatusPill
-                      tone={
-                        booking.status === "CONFIRMED"
-                          ? "ok"
-                          : booking.status === "PENDING"
-                            ? "warn"
-                            : "neutral"
-                      }
-                    >
-                      {bookingStatusLabel[booking.status]}
+                    <StatusPill tone={workOrderStatusTone(wo.status)}>
+                      {workOrderStatusLabel[wo.status]}
                     </StatusPill>
                   </div>
                 </li>
@@ -148,16 +146,4 @@ function Metric({
       {content}
     </div>
   );
-}
-
-function startOfDay(date: Date) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfDay(date: Date) {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
 }
