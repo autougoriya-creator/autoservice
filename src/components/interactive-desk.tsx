@@ -101,12 +101,15 @@ export function InteractiveDesk({
   initialBlocks,
   customers,
   services,
+  readOnly = false,
 }: {
   dayIso: string;
   posts: Post[];
   initialBlocks: DeskBlock[];
   customers: CustomerOpt[];
   services: ServiceOpt[];
+  /** STAFF: view assigned posts only — no DnD / resize / create */
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -268,6 +271,7 @@ export function InteractiveDesk({
     block: DeskBlock,
     mode: "move" | "resize",
   ) {
+    if (readOnly) return;
     e.preventDefault();
     e.stopPropagation();
     didDrag.current = false;
@@ -298,6 +302,7 @@ export function InteractiveDesk({
   }
 
   function onTrackClick(postId: string, e: React.MouseEvent<HTMLDivElement>) {
+    if (readOnly) return;
     if (didDrag.current) {
       didDrag.current = false;
       return;
@@ -325,26 +330,29 @@ export function InteractiveDesk({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-[var(--ink-soft)]">
-          Перетащите карточку на другой пост/время · край справа — длительность ·
-          тап по пустому месту — новая запись
+          {readOnly
+            ? "Только просмотр закреплённых постов · тап по карточке — детали"
+            : "Перетащите карточку на другой пост/время · край справа — длительность · тап по пустому месту — новая запись"}
         </p>
-        <button
-          type="button"
-          onClick={() =>
-            setCreateDraft({
-              postId: posts[0]?.id ?? "",
-              offsetMin: clampBoardMinutes(
-                offsetMinutesFromDate(new Date()) >= 0
-                  ? offsetMinutesFromDate(new Date())
-                  : 0,
-                60,
-              ),
-            })
-          }
-          className="min-h-11 cursor-pointer rounded-md bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(196,92,38,0.28)] hover:bg-[var(--accent-deep)]"
-        >
-          Новая запись
-        </button>
+        {readOnly ? null : (
+          <button
+            type="button"
+            onClick={() =>
+              setCreateDraft({
+                postId: posts[0]?.id ?? "",
+                offsetMin: clampBoardMinutes(
+                  offsetMinutesFromDate(new Date()) >= 0
+                    ? offsetMinutesFromDate(new Date())
+                    : 0,
+                  60,
+                ),
+              })
+            }
+            className="min-h-11 cursor-pointer rounded-md bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(196,92,38,0.28)] hover:bg-[var(--accent-deep)]"
+          >
+            Новая запись
+          </button>
+        )}
       </div>
 
       {error ? (
@@ -406,7 +414,9 @@ export function InteractiveDesk({
                   ref={(el) => {
                     trackRefs.current[post.id] = el;
                   }}
-                  className="relative h-32 cursor-cell bg-[var(--paper)]/30"
+                  className={`relative h-32 bg-[var(--paper)]/30 ${
+                    readOnly ? "cursor-default" : "cursor-cell"
+                  }`}
                   onClick={(e) => onTrackClick(post.id, e)}
                 >
                   <div
@@ -446,9 +456,13 @@ export function InteractiveDesk({
                           setSelectedId(block.id);
                         }}
                         onPointerDown={(e) => beginDrag(e, block, "move")}
-                        className={`absolute top-2 bottom-2 touch-none overflow-hidden rounded-md border px-2 py-1.5 ${blockTone(block.kind, block.status)} ${
+                        className={`absolute top-2 bottom-2 overflow-hidden rounded-md border px-2 py-1.5 ${
+                          readOnly ? "" : "touch-none"
+                        } ${blockTone(block.kind, block.status)} ${
                           active ? "ring-2 ring-[var(--accent)] ring-offset-1" : ""
-                        } ${drag?.id === block.id ? "opacity-90 z-10" : ""}`}
+                        } ${drag?.id === block.id ? "opacity-90 z-10" : ""} ${
+                          readOnly ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
+                        }`}
                         style={{
                           left: `${leftPct}%`,
                           width: `${Math.max(widthPct, 2.5)}%`,
@@ -464,7 +478,7 @@ export function InteractiveDesk({
                           {formatClock(block.startsAt)} · {block.durationMin} мин ·{" "}
                           {statusText(block.kind, block.status)}
                         </p>
-                        {block.kind === "booking" ? (
+                        {!readOnly && block.kind === "booking" ? (
                           <button
                             type="button"
                             aria-label="Изменить длительность"
@@ -485,12 +499,13 @@ export function InteractiveDesk({
         </div>
       </div>
 
-      <LoadBoardLegendStatic />
+      <LoadBoardLegendStatic readOnly={readOnly} />
 
       {selected ? (
         <DetailPanel
           block={selected}
           posts={posts}
+          readOnly={readOnly}
           onClose={() => setSelectedId(null)}
           onSaved={(next) => {
             setBlocks((prev) =>
@@ -502,7 +517,7 @@ export function InteractiveDesk({
         />
       ) : null}
 
-      {createDraft && posts.length > 0 ? (
+      {!readOnly && createDraft && posts.length > 0 ? (
         <CreatePanel
           draft={createDraft}
           day={day}
@@ -523,7 +538,7 @@ export function InteractiveDesk({
   );
 }
 
-function LoadBoardLegendStatic() {
+function LoadBoardLegendStatic({ readOnly }: { readOnly?: boolean }) {
   return (
     <div className="flex flex-wrap gap-3 text-xs text-[var(--ink-soft)]">
       <span className="inline-flex items-center gap-2">
@@ -535,7 +550,9 @@ function LoadBoardLegendStatic() {
         Заказ-наряд
       </span>
       <span className="inline-flex items-center gap-2">
-        Перетаскивание · {BOARD_SNAP_MIN} мин
+        {readOnly
+          ? "Режим сотрудника · только просмотр"
+          : `Перетаскивание · ${BOARD_SNAP_MIN} мин`}
       </span>
     </div>
   );
@@ -544,12 +561,14 @@ function LoadBoardLegendStatic() {
 function DetailPanel({
   block,
   posts,
+  readOnly = false,
   onClose,
   onSaved,
   onError,
 }: {
   block: DeskBlock;
   posts: Post[];
+  readOnly?: boolean;
   onClose: () => void;
   onSaved: (block: DeskBlock) => void;
   onError: (msg: string) => void;
@@ -661,105 +680,147 @@ function DetailPanel({
           <dt className="text-xs text-[var(--ink-soft)]">Авто</dt>
           <dd className="font-medium">{block.vehicleInfo || "—"}</dd>
         </div>
+        <div>
+          <dt className="text-xs text-[var(--ink-soft)]">Пост</dt>
+          <dd className="font-medium">
+            {posts.find((p) => p.id === block.postId)?.name ?? "—"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-[var(--ink-soft)]">Время</dt>
+          <dd className="font-medium">
+            {formatClock(block.startsAt)} · {block.durationMin} мин
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-[var(--ink-soft)]">Статус</dt>
+          <dd className="font-medium">
+            {statusText(block.kind, block.status)}
+          </dd>
+        </div>
         <div className="sm:col-span-2">
           <dt className="text-xs text-[var(--ink-soft)]">Услуги</dt>
           <dd className="font-medium">{block.services.join(", ")}</dd>
         </div>
       </dl>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="block text-sm">
-          <span className="mb-1.5 block font-semibold">Пост</span>
-          <select
-            value={postId}
-            onChange={(e) => setPostId(e.target.value)}
-            className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-          >
-            {posts.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1.5 block font-semibold">Начало</span>
-          <input
-            type="datetime-local"
-            value={startsLocal}
-            onChange={(e) => setStartsLocal(e.target.value)}
-            className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-          />
-        </label>
-        {block.kind === "booking" ? (
-          <>
+      {readOnly ? (
+        <div className="mt-2 flex flex-wrap gap-3">
+          {block.kind === "work_order" ? (
+            <a
+              href={`/owner/work-orders/${block.id}`}
+              className="inline-flex min-h-11 items-center rounded-md border border-[var(--line)] px-5 text-sm font-semibold"
+            >
+              Открыть карточку ЗН
+            </a>
+          ) : null}
+          <p className="self-center text-xs text-[var(--ink-soft)]">
+            Редактирование недоступно в режиме сотрудника
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
-              <span className="mb-1.5 block font-semibold">Длительность, мин</span>
-              <input
-                type="number"
-                min={15}
-                step={15}
-                value={durationMin}
-                onChange={(e) => setDurationMin(Number(e.target.value) || 15)}
+              <span className="mb-1.5 block font-semibold">Пост</span>
+              <select
+                value={postId}
+                onChange={(e) => setPostId(e.target.value)}
                 className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-              />
+              >
+                {posts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="block text-sm">
-              <span className="mb-1.5 block font-semibold">Услуга</span>
+              <span className="mb-1.5 block font-semibold">Начало</span>
               <input
-                value={serviceName}
-                onChange={(e) => setServiceName(e.target.value)}
+                type="datetime-local"
+                value={startsLocal}
+                onChange={(e) => setStartsLocal(e.target.value)}
                 className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
               />
             </label>
-            <label className="block text-sm sm:col-span-2">
-              <span className="mb-1.5 block font-semibold">Авто / госномер</span>
-              <input
-                value={vehicleInfo}
-                onChange={(e) => setVehicleInfo(e.target.value)}
+            {block.kind === "booking" ? (
+              <>
+                <label className="block text-sm">
+                  <span className="mb-1.5 block font-semibold">
+                    Длительность, мин
+                  </span>
+                  <input
+                    type="number"
+                    min={15}
+                    step={15}
+                    value={durationMin}
+                    onChange={(e) =>
+                      setDurationMin(Number(e.target.value) || 15)
+                    }
+                    className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1.5 block font-semibold">Услуга</span>
+                  <input
+                    value={serviceName}
+                    onChange={(e) => setServiceName(e.target.value)}
+                    className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                  />
+                </label>
+                <label className="block text-sm sm:col-span-2">
+                  <span className="mb-1.5 block font-semibold">
+                    Авто / госномер
+                  </span>
+                  <input
+                    value={vehicleInfo}
+                    onChange={(e) => setVehicleInfo(e.target.value)}
+                    className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                  />
+                </label>
+              </>
+            ) : null}
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-semibold">Статус</span>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
                 className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-              />
+              >
+                {Object.entries(
+                  block.kind === "booking"
+                    ? bookingStatusLabel
+                    : workOrderStatusLabel,
+                ).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
             </label>
-          </>
-        ) : null}
-        <label className="block text-sm">
-          <span className="mb-1.5 block font-semibold">Статус</span>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-          >
-            {Object.entries(
-              block.kind === "booking"
-                ? bookingStatusLabel
-                : workOrderStatusLabel,
-            ).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+          </div>
 
-      <div className="mt-5 flex flex-wrap gap-3">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => void save()}
-          className="min-h-11 cursor-pointer rounded-md bg-[var(--ink)] px-5 text-sm font-semibold text-white disabled:opacity-60"
-        >
-          {pending ? "Сохранение…" : "Сохранить"}
-        </button>
-        {block.kind === "work_order" ? (
-          <a
-            href={`/owner/work-orders/${block.id}`}
-            className="inline-flex min-h-11 items-center rounded-md border border-[var(--line)] px-5 text-sm font-semibold"
-          >
-            Открыть карточку ЗН
-          </a>
-        ) : null}
-      </div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => void save()}
+              className="min-h-11 cursor-pointer rounded-md bg-[var(--ink)] px-5 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {pending ? "Сохранение…" : "Сохранить"}
+            </button>
+            {block.kind === "work_order" ? (
+              <a
+                href={`/owner/work-orders/${block.id}`}
+                className="inline-flex min-h-11 items-center rounded-md border border-[var(--line)] px-5 text-sm font-semibold"
+              >
+                Открыть карточку ЗН
+              </a>
+            ) : null}
+          </div>
+        </>
+      )}
     </aside>
   );
 }
