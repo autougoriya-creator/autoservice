@@ -113,7 +113,7 @@ async function main() {
     },
   });
 
-  await prisma.vehicle.create({
+  const sportage = await prisma.vehicle.create({
     data: {
       organizationId: org.id,
       customerId: customerAlex.id,
@@ -137,7 +137,7 @@ async function main() {
     },
   });
 
-  await prisma.vehicle.create({
+  const vesta = await prisma.vehicle.create({
     data: {
       organizationId: org.id,
       customerId: customerIvan.id,
@@ -164,18 +164,137 @@ async function main() {
   );
 
   const now = new Date();
-  const inTwoHours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const at = (hour: number, minute = 0) => {
+    const d = new Date(today);
+    d.setHours(hour, minute, 0, 0);
+    return d;
+  };
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  tomorrow.setHours(10, 0, 0, 0);
 
+  // Dense day occupancy across posts for the load board
   await prisma.booking.createMany({
     data: [
       {
         organizationId: org.id,
         clientId: clientUser.id,
         postId: posts[0].id,
+        serviceName: "Экспресс-мойка",
+        vehicleInfo: "Toyota Camry · А123ВС777",
+        startsAt: at(8, 0),
+        durationMin: 30,
+        status: BookingStatus.DONE,
+      },
+      {
+        organizationId: org.id,
+        clientId: clientUser.id,
+        postId: posts[0].id,
+        serviceName: "Комплексная мойка",
+        vehicleInfo: "Kia Sportage · К456ОР777",
+        startsAt: at(9, 0),
+        durationMin: 60,
+        status: BookingStatus.IN_PROGRESS,
+      },
+      {
+        organizationId: org.id,
+        clientId: clientUser.id,
+        postId: posts[0].id,
         serviceName: "Комплексная мойка",
         vehicleInfo: "Toyota Camry · А123ВС777",
-        startsAt: inTwoHours,
+        startsAt: at(11, 0),
+        durationMin: 45,
+        status: BookingStatus.CONFIRMED,
+      },
+      {
+        organizationId: org.id,
+        clientId: clientUser.id,
+        postId: posts[0].id,
+        serviceName: "Пылесос салона",
+        vehicleInfo: "Lada Vesta · В321АА50",
+        startsAt: at(14, 0),
+        durationMin: 30,
+        status: BookingStatus.CONFIRMED,
+      },
+      {
+        organizationId: org.id,
+        clientId: clientUser.id,
+        postId: posts[0].id,
+        serviceName: "Экспресс-мойка",
+        vehicleInfo: "Toyota Camry · А123ВС777",
+        startsAt: at(16, 30),
+        durationMin: 30,
+        status: BookingStatus.PENDING,
+      },
+      {
+        organizationId: org.id,
+        clientId: clientUser.id,
+        postId: posts[1].id,
+        serviceName: "Комплексная мойка",
+        vehicleInfo: "Volkswagen Polo · М789ТУ199",
+        startsAt: at(8, 30),
+        durationMin: 60,
+        status: BookingStatus.DONE,
+      },
+      {
+        organizationId: org.id,
+        clientId: clientUser.id,
+        postId: posts[1].id,
+        serviceName: "Мойка двигателя",
+        vehicleInfo: "Kia Sportage · К456ОР777",
+        startsAt: at(10, 30),
+        durationMin: 45,
+        status: BookingStatus.CONFIRMED,
+      },
+      {
+        organizationId: org.id,
+        clientId: clientUser.id,
+        postId: posts[1].id,
+        serviceName: "Экспресс-мойка",
+        vehicleInfo: "Lada Vesta · В321АА50",
+        startsAt: at(13, 0),
+        durationMin: 30,
+        status: BookingStatus.CONFIRMED,
+      },
+      {
+        organizationId: org.id,
+        clientId: clientUser.id,
+        postId: posts[1].id,
+        serviceName: "Комплексная мойка",
+        vehicleInfo: "Volkswagen Polo · М789ТУ199",
+        startsAt: at(15, 0),
+        durationMin: 60,
+        status: BookingStatus.PENDING,
+      },
+      {
+        organizationId: org.id,
+        clientId: clientUser.id,
+        postId: posts[1].id,
+        serviceName: "Экспресс-мойка",
+        vehicleInfo: "Toyota Camry · А123ВС777",
+        startsAt: at(18, 0),
+        durationMin: 30,
+        status: BookingStatus.PENDING,
+      },
+      {
+        organizationId: org.id,
+        clientId: clientUser.id,
+        postId: posts[2].id,
+        serviceName: "Химчистка салона",
+        vehicleInfo: "Toyota Camry · А123ВС777",
+        startsAt: at(9, 0),
+        durationMin: 180,
+        status: BookingStatus.IN_PROGRESS,
+      },
+      {
+        organizationId: org.id,
+        clientId: clientUser.id,
+        postId: posts[2].id,
+        serviceName: "Полировка кузова",
+        vehicleInfo: "Volkswagen Polo · М789ТУ199",
+        startsAt: at(15, 0),
+        durationMin: 180,
         status: BookingStatus.CONFIRMED,
       },
       {
@@ -185,18 +304,20 @@ async function main() {
         serviceName: "Полировка кузова",
         vehicleInfo: "Toyota Camry · А123ВС777",
         startsAt: tomorrow,
+        durationMin: 240,
         status: BookingStatus.PENDING,
       },
     ],
   });
 
-  // Work orders
   async function createWorkOrder(opts: {
     customerId: string;
     vehicleId: string;
     status: WorkOrderStatus;
     notes?: string;
     completedAt?: Date;
+    postId?: string;
+    scheduledAt?: Date;
     lines: { serviceId: string; quantity?: number }[];
   }) {
     const updated = await prisma.organization.update({
@@ -222,6 +343,8 @@ async function main() {
         status: opts.status,
         customerId: opts.customerId,
         vehicleId: opts.vehicleId,
+        postId: opts.postId,
+        scheduledAt: opts.scheduledAt,
         notes: opts.notes,
         completedAt: opts.completedAt,
         lines: { create: lineData },
@@ -234,6 +357,8 @@ async function main() {
     vehicleId: camry.id,
     status: WorkOrderStatus.DONE,
     completedAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
+    postId: posts[0].id,
+    scheduledAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
     notes: "Выполнено на посту 1",
     lines: [
       { serviceId: services[1].id },
@@ -253,7 +378,9 @@ async function main() {
     customerId: customerAlex.id,
     vehicleId: camry.id,
     status: WorkOrderStatus.IN_PROGRESS,
-    notes: "В работе — комплекс",
+    postId: posts[0].id,
+    scheduledAt: at(12, 0),
+    notes: "В работе — комплекс + двигатель",
     lines: [
       { serviceId: services[1].id },
       { serviceId: services[4].id },
@@ -264,7 +391,29 @@ async function main() {
     customerId: customerMaria.id,
     vehicleId: polo.id,
     status: WorkOrderStatus.OPEN,
+    postId: posts[1].id,
+    scheduledAt: at(17, 0),
+    notes: "Вечерний экспресс",
     lines: [{ serviceId: services[0].id }],
+  });
+
+  await createWorkOrder({
+    customerId: customerIvan.id,
+    vehicleId: vesta.id,
+    status: WorkOrderStatus.OPEN,
+    postId: posts[0].id,
+    scheduledAt: at(18, 30),
+    lines: [{ serviceId: services[1].id }],
+  });
+
+  await createWorkOrder({
+    customerId: customerAlex.id,
+    vehicleId: sportage.id,
+    status: WorkOrderStatus.OPEN,
+    postId: posts[2].id,
+    scheduledAt: at(13, 0),
+    notes: "Детейлинг — слот после химчистки",
+    lines: [{ serviceId: services[5].id }],
   });
 
   // Keep legacy Order rows for older stub screens if any remain

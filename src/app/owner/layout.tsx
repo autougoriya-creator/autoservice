@@ -24,6 +24,7 @@ export default async function OwnerLayout({
         role={roleLabel[session.membership.role]}
         links={[
           { href: "/owner", label: "Обзор" },
+          { href: "/owner/desk", label: "Рабочий стол" },
           { href: "/owner/work-orders", label: "Заказ-наряды" },
           { href: "/owner/clients", label: "Клиенты" },
           { href: "/owner/vehicles", label: "Авто" },

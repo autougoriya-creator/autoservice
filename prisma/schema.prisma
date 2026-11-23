@@ -89,6 +89,7 @@ model ServicePost {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   bookings     Booking[]
+  workOrders   WorkOrder[]
 
   @@index([organizationId])
 }
@@ -101,6 +102,7 @@ model Booking {
   serviceName    String
   vehicleInfo    String?
   startsAt       DateTime
+  durationMin    Int           @default(60)
   status         BookingStatus @default(PENDING)
   createdAt      DateTime      @default(now())
 
@@ -110,6 +112,7 @@ model Booking {
 
   @@index([organizationId, startsAt])
   @@index([clientId])
+  @@index([postId, startsAt])
 }
 
 /// Legacy stub history (kept for compatibility); ЛК prefers WorkOrder
@@ -197,6 +200,8 @@ model WorkOrder {
   status         WorkOrderStatus @default(OPEN)
   customerId     String
   vehicleId      String
+  postId         String?
+  scheduledAt    DateTime?
   notes          String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
@@ -205,12 +210,14 @@ model WorkOrder {
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   customer     Customer        @relation(fields: [customerId], references: [id])
   vehicle      Vehicle         @relation(fields: [vehicleId], references: [id])
+  post         ServicePost?    @relation(fields: [postId], references: [id], onDelete: SetNull)
   lines        WorkOrderLine[]
 
   @@unique([organizationId, number])
   @@index([organizationId, status])
   @@index([customerId])
   @@index([vehicleId])
+  @@index([postId, scheduledAt])
 }
 
 model WorkOrderLine {
