@@ -40,6 +40,14 @@ async function main() {
     },
   });
 
+  const admin = await prisma.user.create({
+    data: {
+      email: "admin@demo.local",
+      name: "Ольга Админова",
+      phone: "+7 (900) 101-20-30",
+    },
+  });
+
   const staff = await prisma.user.create({
     data: {
       email: "staff@demo.local",
@@ -75,6 +83,7 @@ async function main() {
   await prisma.membership.createMany({
     data: [
       { organizationId: org.id, userId: owner.id, role: Role.OWNER },
+      { organizationId: org.id, userId: admin.id, role: Role.ADMIN },
       { organizationId: org.id, userId: staff.id, role: Role.STAFF },
       { organizationId: org.id, userId: washer.id, role: Role.STAFF },
       { organizationId: org.id, userId: mechanic.id, role: Role.STAFF },
@@ -542,11 +551,12 @@ async function main() {
   console.log("Seed OK");
   console.log("Demo tenant:", org.name, `(${org.slug})`);
   console.log("Logins (mock auth, no password):");
-  console.log("  owner@demo.local     → кабинет владельца");
-  console.log("  staff@demo.local     → персонал (сделка 35%)");
-  console.log("  washer@demo.local    → мойщик (сделка 30%)");
-  console.log("  mechanic@demo.local  → слесарь (оклад)");
-  console.log("  client@demo.local    → личный кабинет клиента");
+  console.log("  owner@demo.local     → владелец (ЗП, экономика)");
+  console.log("  admin@demo.local      → администратор (стол, клиенты, график)");
+  console.log("  staff@demo.local      → сотрудник / мойщик (сделка 35%)");
+  console.log("  washer@demo.local     → сотрудник / мойщик (сделка 30%)");
+  console.log("  mechanic@demo.local   → сотрудник / слесарь (оклад)");
+  console.log("  client@demo.local     → клиент (ЛК)");
 }
 
 main()

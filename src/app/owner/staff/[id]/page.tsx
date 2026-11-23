@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { upsertStaffProfile } from "@/app/actions/staff";
 import { prisma } from "@/lib/prisma";
-import { orgIdOf, requireStaffSession } from "@/lib/tenant";
+import { orgIdOf, requireOwnerSession } from "@/lib/tenant";
 import { SectionTitle, SubmitButton } from "@/components/ui";
 import {
   Field,
@@ -16,7 +16,7 @@ export default async function StaffEditPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await requireStaffSession(["OWNER"]);
+  const session = await requireOwnerSession();
   const organizationId = orgIdOf(session);
   const { id } = await params;
 

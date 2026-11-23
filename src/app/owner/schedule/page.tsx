@@ -3,7 +3,7 @@ import {
   deleteStaffShift,
 } from "@/app/actions/staff";
 import { prisma } from "@/lib/prisma";
-import { orgIdOf, requireStaffSession } from "@/lib/tenant";
+import { orgIdOf, requireManagementSession } from "@/lib/tenant";
 import { formatDateTime } from "@/lib/format";
 import { SectionTitle, SubmitButton } from "@/components/ui";
 import {
@@ -22,7 +22,7 @@ function toLocalInputValue(date: Date) {
 }
 
 export default async function SchedulePage() {
-  const session = await requireStaffSession(["OWNER"]);
+  const session = await requireManagementSession();
   const organizationId = orgIdOf(session);
 
   const now = new Date();

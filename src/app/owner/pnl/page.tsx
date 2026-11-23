@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { buildPostPnL } from "@/lib/pnl";
-import { orgIdOf, requireStaffSession } from "@/lib/tenant";
+import { orgIdOf, requireOwnerSession } from "@/lib/tenant";
 import { formatDate, formatRub } from "@/lib/format";
 import type { PeriodKey } from "@/lib/payroll";
 import { SectionTitle, StatusPill } from "@/components/ui";
@@ -11,7 +11,7 @@ export default async function PnLPage({
 }: {
   searchParams: Promise<{ period?: string }>;
 }) {
-  const session = await requireStaffSession(["OWNER"]);
+  const session = await requireOwnerSession();
   const organizationId = orgIdOf(session);
   const sp = await searchParams;
   const period: PeriodKey = sp.period === "week" ? "week" : "day";

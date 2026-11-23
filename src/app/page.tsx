@@ -1,4 +1,4 @@
-import { getSession } from "@/lib/auth";
+import { getSession, homeForRole } from "@/lib/auth";
 import { BrandMark, ButtonLink } from "@/components/ui";
 
 export default async function LandingPage() {
@@ -20,9 +20,7 @@ export default async function LandingPage() {
         <nav className="flex items-center gap-3">
           {session ? (
             <ButtonLink
-              href={
-                session.membership.role === "CLIENT" ? "/client" : "/owner"
-              }
+              href={homeForRole(session.membership.role)}
               variant="dark"
             >
               В кабинет

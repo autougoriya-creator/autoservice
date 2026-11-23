@@ -12,14 +12,16 @@ import {
   workOrderNumberLabel,
   workOrderTotal,
 } from "@/lib/work-order";
+import { OPS_ROLES, isOwner, isStaff } from "@/lib/tenant";
 import { SectionTitle, StatusPill } from "@/components/ui";
 
 export default async function OwnerDashboardPage() {
-  const session = await requireSession(["OWNER", "STAFF"]);
-  if (session.membership.role === "STAFF") {
+  const session = await requireSession(OPS_ROLES);
+  if (isStaff(session)) {
     redirect("/owner/my-work");
   }
   const orgId = session.membership.organization.id;
+  const owner = isOwner(session);
 
   const [
     customersCount,
@@ -60,7 +62,11 @@ export default async function OwnerDashboardPage() {
           href="/owner/work-orders"
         />
         <Metric label="Рабочий стол" value="→" href="/owner/desk" />
-        <Metric label="Экономика постов" value="→" href="/owner/pnl" />
+        {owner ? (
+          <Metric label="Экономика постов" value="→" href="/owner/pnl" />
+        ) : (
+          <Metric label="График смен" value="→" href="/owner/schedule" />
+        )}
       </div>
 
       <section className="mt-10">
