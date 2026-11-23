@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -15,6 +16,9 @@ import { SectionTitle, StatusPill } from "@/components/ui";
 
 export default async function OwnerDashboardPage() {
   const session = await requireSession(["OWNER", "STAFF"]);
+  if (session.membership.role === "STAFF") {
+    redirect("/owner/my-work");
+  }
   const orgId = session.membership.organization.id;
 
   const [
@@ -47,7 +51,7 @@ export default async function OwnerDashboardPage() {
         description={`Добро пожаловать, ${session.name}. Справочники, заказ-наряды и текущая загрузка.`}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Metric label="Клиенты" value={String(customersCount)} href="/owner/clients" />
         <Metric label="Услуги в прайсе" value={String(servicesCount)} href="/owner/services" />
         <Metric
@@ -56,6 +60,7 @@ export default async function OwnerDashboardPage() {
           href="/owner/work-orders"
         />
         <Metric label="Рабочий стол" value="→" href="/owner/desk" />
+        <Metric label="Экономика постов" value="→" href="/owner/pnl" />
       </div>
 
       <section className="mt-10">

@@ -32,6 +32,11 @@ enum WorkOrderStatus {
   CANCELLED
 }
 
+enum PayMode {
+  DEAL
+  SALARY
+}
+
 model Organization {
   id        String   @id @default(cuid())
   name      String
@@ -39,15 +44,18 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships   Membership[]
-  posts         ServicePost[]
-  bookings      Booking[]
-  orders        Order[]
-  customers     Customer[]
-  vehicles      Vehicle[]
-  services      Service[]
-  workOrders    WorkOrder[]
-  workOrderSeq  Int          @default(0)
+  memberships     Membership[]
+  posts           ServicePost[]
+  bookings        Booking[]
+  orders          Order[]
+  customers       Customer[]
+  vehicles        Vehicle[]
+  services        Service[]
+  workOrders      WorkOrder[]
+  staffProfiles   StaffProfile[]
+  postAssignments PostAssignment[]
+  staffShifts     StaffShift[]
+  workOrderSeq    Int              @default(0)
 }
 
 model User {
@@ -58,10 +66,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships Membership[]
-  bookings    Booking[]    @relation("ClientBookings")
-  orders      Order[]      @relation("ClientOrders")
-  customers   Customer[]
+  memberships   Membership[]
+  bookings      Booking[]      @relation("ClientBookings")
+  orders        Order[]        @relation("ClientOrders")
+  customers     Customer[]
+  staffProfiles StaffProfile[]
 }
 
 model Membership {
@@ -87,11 +96,72 @@ model ServicePost {
   organizationId String
   createdAt      DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  bookings     Booking[]
-  workOrders   WorkOrder[]
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bookings        Booking[]
+  workOrders      WorkOrder[]
+  postAssignments PostAssignment[]
+  staffShifts     StaffShift[]
 
   @@index([organizationId])
+}
+
+/// Профиль сотрудника (мойщик / слесарь) и настройки оплаты
+model StaffProfile {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  title          String   @default("Мойщик")
+  payMode        PayMode  @default(DEAL)
+  dealPercent    Int      @default(30)
+  salaryRub      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments  PostAssignment[]
+  shifts       StaffShift[]
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+}
+
+/// Закрепление сотрудника за постом
+model PostAssignment {
+  id             String    @id @default(cuid())
+  organizationId String
+  postId         String
+  staffProfileId String
+  activeFrom     DateTime  @default(now())
+  activeTo       DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  post         ServicePost  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  staffProfile StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, postId])
+  @@index([staffProfileId])
+}
+
+/// Смена / график сотрудника
+model StaffShift {
+  id             String   @id @default(cuid())
+  organizationId String
+  staffProfileId String
+  postId         String?
+  startsAt       DateTime
+  endsAt         DateTime
+  note           String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  staffProfile StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  post         ServicePost? @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, startsAt])
+  @@index([staffProfileId, startsAt])
 }
 
 model Booking {
