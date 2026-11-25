@@ -500,7 +500,7 @@ export function InteractiveDesk({
                   ref={(el) => {
                     trackRefs.current[post.id] = el;
                   }}
-                  className={`relative h-32 bg-[var(--paper)]/30 ${
+                  className={`relative h-48 bg-[var(--paper)]/30 ${
                     readOnly ? "cursor-default" : "cursor-cell"
                   }`}
                   onClick={(e) => onTrackClick(post.id, e)}
@@ -626,6 +626,7 @@ export function InteractiveDesk({
             setBlocks((prev) =>
               prev.map((b) => (b.id === next.id ? next : b)),
             );
+            setSelectedId(null);
             startTransition(() => router.refresh());
           }}
           onRemoved={(id) => {

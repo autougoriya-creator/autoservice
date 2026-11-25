@@ -94,7 +94,9 @@ export function ClientBookingForm({
   const todayKey = localDayKey(new Date());
 
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? "");
-  const [serviceId, setServiceId] = useState(services[0]?.id ?? "");
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(() =>
+    services[0] ? [services[0].id] : [],
+  );
   const [dayKey, setDayKey] = useState(dayKeys[0] ?? todayKey);
   const [slotKey, setSlotKey] = useState("");
 
@@ -109,14 +111,31 @@ export function ClientBookingForm({
   );
 
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
-  const selectedService = services.find((s) => s.id === serviceId);
-  const durationMin = selectedService?.durationMin ?? 30;
-  const priceRub = selectedService
-    ? resolveServicePriceRub(
-        selectedService,
-        selectedVehicle?.vehicleClassId,
-      )
-    : 0;
+  const selectedServices = services.filter((s) =>
+    selectedServiceIds.includes(s.id),
+  );
+
+  const durationMin = Math.max(
+    15,
+    selectedServices.reduce((sum, s) => sum + s.durationMin, 0),
+  );
+  const priceRub = selectedServices.reduce(
+    (sum, s) =>
+      sum + resolveServicePriceRub(s, selectedVehicle?.vehicleClassId),
+    0,
+  );
+
+  function toggleService(id: string) {
+    setSelectedServiceIds((prev) => {
+      const on = prev.includes(id);
+      if (on) {
+        if (prev.length <= 1) return prev;
+        return prev.filter((x) => x !== id);
+      }
+      return [...prev, id];
+    });
+    setSlotKey("");
+  }
 
   const daySlots = useMemo(
     () =>
@@ -211,30 +230,46 @@ export function ClientBookingForm({
           </>
         )}
 
-        <Field label="Услуга" htmlFor="serviceId">
-          <TextSelect
-            id="serviceId"
-            name="serviceId"
-            required
-            value={serviceId}
-            onChange={(e) => {
-              setServiceId(e.target.value);
-              setSlotKey("");
-            }}
-          >
+        <div>
+          <p className="mb-1.5 text-sm font-semibold text-[var(--ink)]">
+            Услуги
+          </p>
+          <p className="mb-2 text-xs text-[var(--ink-soft)]">
+            Можно выбрать несколько — как «добавить услугу» в заказе. Длительность
+            и сумма сложатся.
+          </p>
+          <ul className="max-h-52 space-y-2 overflow-y-auto rounded-md border border-[var(--line)] bg-[var(--paper)]/50 p-3">
             {services.map((s) => {
+              const on = selectedServiceIds.includes(s.id);
               const p = resolveServicePriceRub(
                 s,
                 selectedVehicle?.vehicleClassId,
               );
               return (
-                <option key={s.id} value={s.id}>
-                  {s.name} · {formatRub(p)} · {formatDuration(s.durationMin)}
-                </option>
+                <li key={s.id}>
+                  <label className="flex cursor-pointer items-start gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      name="serviceIds"
+                      value={s.id}
+                      checked={on}
+                      onChange={() => toggleService(s.id)}
+                      className="mt-1"
+                    />
+                    <span className="flex-1">
+                      <span className="font-medium text-[var(--ink)]">
+                        {s.name}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-[var(--ink-soft)]">
+                        {formatRub(p)} · {formatDuration(s.durationMin)}
+                      </span>
+                    </span>
+                  </label>
+                </li>
               );
             })}
-          </TextSelect>
-        </Field>
+          </ul>
+        </div>
 
         <div>
           <p className="mb-1.5 text-sm font-semibold text-[var(--ink)]">Дата</p>
@@ -358,7 +393,7 @@ export function ClientBookingForm({
           />
         </Field>
 
-        {selectedService ? (
+        {selectedServices.length > 0 ? (
           <div className="rounded-lg bg-[var(--ink)] px-4 py-3 text-white">
             <p className="text-xs uppercase tracking-[0.14em] text-white/60">
               К оплате на точке
@@ -366,8 +401,11 @@ export function ClientBookingForm({
             <p className="brand-mark mt-1 text-2xl">
               {formatRub(priceRub)}
               <span className="ml-3 text-sm font-normal text-white/70">
-                {formatDuration(selectedService.durationMin)}
+                {formatDuration(durationMin)}
               </span>
+            </p>
+            <p className="mt-1 text-sm text-white/75">
+              {selectedServices.map((s) => s.name).join(" · ")}
             </p>
             {selectedSlot ? (
               <p className="mt-2 text-sm text-white/75">
@@ -378,13 +416,13 @@ export function ClientBookingForm({
         ) : null}
 
         <FormActions>
-          {selectedSlot ? (
+          {selectedSlot && selectedServices.length > 0 ? (
             <SubmitButton className="sm:w-auto" variant="primary">
               Записаться
             </SubmitButton>
           ) : (
             <p className="text-sm text-[var(--ink-soft)]">
-              Выберите дату и свободное время, чтобы отправить заявку.
+              Выберите услуги, дату и свободное время, чтобы отправить заявку.
             </p>
           )}
         </FormActions>
