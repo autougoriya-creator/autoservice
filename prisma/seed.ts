@@ -12,6 +12,7 @@ const prisma = new PrismaClient();
 async function main() {
   await prisma.stockMovement.deleteMany();
   await prisma.serviceFluidNorm.deleteMany();
+  await prisma.serviceClassPrice.deleteMany();
   await prisma.fluidSku.deleteMany();
   await prisma.staffShift.deleteMany();
   await prisma.postAssignment.deleteMany();
@@ -22,6 +23,7 @@ async function main() {
   await prisma.booking.deleteMany();
   await prisma.service.deleteMany();
   await prisma.vehicle.deleteMany();
+  await prisma.vehicleClass.deleteMany();
   await prisma.customer.deleteMany();
   await prisma.order.deleteMany();
   await prisma.servicePost.deleteMany();
@@ -138,10 +140,23 @@ async function main() {
     },
   });
 
+  const [class1, class2, class3] = await Promise.all(
+    [
+      { code: "1", name: "Легковой", sortOrder: 1 },
+      { code: "2", name: "Кроссовер", sortOrder: 2 },
+      { code: "3", name: "Внедорожник / минивэн", sortOrder: 3 },
+    ].map((c) =>
+      prisma.vehicleClass.create({
+        data: { organizationId: org.id, ...c },
+      }),
+    ),
+  );
+
   const camry = await prisma.vehicle.create({
     data: {
       organizationId: org.id,
       customerId: customerAlex.id,
+      vehicleClassId: class1.id,
       make: "Toyota",
       model: "Camry",
       plate: "А123ВС777",
@@ -154,6 +169,7 @@ async function main() {
     data: {
       organizationId: org.id,
       customerId: customerAlex.id,
+      vehicleClassId: class2.id,
       make: "Kia",
       model: "Sportage",
       plate: "К456ОР777",
@@ -166,6 +182,7 @@ async function main() {
     data: {
       organizationId: org.id,
       customerId: customerMaria.id,
+      vehicleClassId: class1.id,
       make: "Volkswagen",
       model: "Polo",
       plate: "М789ТУ199",
@@ -178,6 +195,7 @@ async function main() {
     data: {
       organizationId: org.id,
       customerId: customerIvan.id,
+      vehicleClassId: class1.id,
       make: "Lada",
       model: "Vesta",
       plate: "В321АА50",
@@ -185,21 +203,44 @@ async function main() {
     },
   });
 
+  /** Базовая цена = класс 1; множители для 2 и 3. */
+  const serviceDefs: {
+    name: string;
+    durationMin: number;
+    prices: [number, number, number];
+  }[] = [
+    { name: "Экспресс-мойка", durationMin: 20, prices: [600, 750, 900] },
+    { name: "Комплексная мойка", durationMin: 45, prices: [1200, 1500, 1800] },
+    { name: "Химчистка салона", durationMin: 180, prices: [4500, 5200, 6000] },
+    { name: "Полировка кузова", durationMin: 240, prices: [8000, 9500, 11000] },
+    { name: "Мойка двигателя", durationMin: 40, prices: [1800, 2000, 2200] },
+    { name: "Пылесос салона", durationMin: 15, prices: [400, 500, 600] },
+  ];
+
   const services = await Promise.all(
-    [
-      { name: "Экспресс-мойка", priceRub: 600, durationMin: 20 },
-      { name: "Комплексная мойка", priceRub: 1200, durationMin: 45 },
-      { name: "Химчистка салона", priceRub: 4500, durationMin: 180 },
-      { name: "Полировка кузова", priceRub: 8000, durationMin: 240 },
-      { name: "Мойка двигателя", priceRub: 1800, durationMin: 40 },
-      { name: "Пылесос салона", priceRub: 400, durationMin: 15 },
-    ].map((s) =>
+    serviceDefs.map((s) =>
       prisma.service.create({
-        data: { organizationId: org.id, ...s },
+        data: {
+          organizationId: org.id,
+          name: s.name,
+          priceRub: s.prices[0],
+          durationMin: s.durationMin,
+        },
       }),
     ),
   );
 
+  const classes = [class1, class2, class3];
+  await prisma.serviceClassPrice.createMany({
+    data: services.flatMap((service, i) =>
+      classes.map((vc, ci) => ({
+        organizationId: org.id,
+        serviceId: service.id,
+        vehicleClassId: vc.id,
+        priceRub: serviceDefs[i].prices[ci],
+      })),
+    ),
+  });
   // Склад техжидкостей + нормы расхода на услуги
   const shampoo = await prisma.fluidSku.create({
     data: {
@@ -487,6 +528,21 @@ async function main() {
     serviceNames: ["Полировка кузова", "Мойка двигателя"],
   });
 
+  const classPriceByService = new Map(
+    services.map((service, i) => [
+      service.id,
+      new Map(
+        classes.map((vc, ci) => [vc.id, serviceDefs[i].prices[ci]] as const),
+      ),
+    ]),
+  );
+  const vehicleClassOf: Record<string, string> = {
+    [camry.id]: class1.id,
+    [sportage.id]: class2.id,
+    [polo.id]: class1.id,
+    [vesta.id]: class1.id,
+  };
+
   async function createWorkOrder(opts: {
     customerId: string;
     vehicleId: string;
@@ -504,12 +560,16 @@ async function main() {
       data: { workOrderSeq: { increment: 1 } },
     });
 
+    const vcId = vehicleClassOf[opts.vehicleId];
     const lineData = opts.lines.map((line) => {
       const service = services.find((s) => s.id === line.serviceId)!;
+      const classPrice = vcId
+        ? classPriceByService.get(service.id)?.get(vcId)
+        : undefined;
       return {
         serviceId: service.id,
         name: service.name,
-        priceRub: service.priceRub,
+        priceRub: classPrice ?? service.priceRub,
         durationMin: service.durationMin,
         quantity: line.quantity ?? 1,
       };

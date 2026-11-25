@@ -31,7 +31,7 @@ export default async function ServiceEditPage({
   const { id } = await params;
   const canManageNorms = MANAGEMENT_ROLES.includes(session.membership.role);
 
-  const [service, fluidSkus] = await Promise.all([
+  const [service, fluidSkus, vehicleClasses] = await Promise.all([
     prisma.service.findFirst({
       where: { id, organizationId },
       include: {
@@ -39,6 +39,7 @@ export default async function ServiceEditPage({
           include: { fluidSku: true },
           orderBy: { fluidSku: { name: "asc" } },
         },
+        classPrices: true,
       },
     }),
     canManageNorms
@@ -47,15 +48,23 @@ export default async function ServiceEditPage({
           orderBy: { name: "asc" },
         })
       : Promise.resolve([]),
+    prisma.vehicleClass.findMany({
+      where: { organizationId },
+      orderBy: { sortOrder: "asc" },
+    }),
   ]);
   if (!service) notFound();
+
+  const priceByClass = new Map(
+    service.classPrices.map((p) => [p.vehicleClassId, p.priceRub]),
+  );
 
   return (
     <div className="max-w-xl space-y-8">
       <SectionTitle
         eyebrow="Справочник"
         title={service.name}
-        description="Цена, норма времени и нормы расхода техжидкостей."
+        description="Базовая цена, цены по классам авто, норма времени и расход техжидкостей."
       />
 
       <FormCard>
@@ -65,7 +74,11 @@ export default async function ServiceEditPage({
             <TextInput id="name" name="name" required defaultValue={service.name} />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Цена, ₽" htmlFor="priceRub">
+            <Field
+              label="Базовая цена, ₽"
+              htmlFor="priceRub"
+              hint="Если нет цены по классу"
+            >
               <TextInput
                 id="priceRub"
                 name="priceRub"
@@ -77,7 +90,7 @@ export default async function ServiceEditPage({
             <Field
               label="Норма времени, мин"
               htmlFor="durationMin"
-              hint="Плановая длительность услуги"
+              hint="Подставляется при создании заказ-наряда"
             >
               <TextInput
                 id="durationMin"
@@ -88,6 +101,33 @@ export default async function ServiceEditPage({
               />
             </Field>
           </div>
+
+          {vehicleClasses.length > 0 ? (
+            <fieldset className="space-y-3">
+              <legend className="text-sm font-semibold text-[var(--ink)]">
+                Цены по классам авто
+              </legend>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {vehicleClasses.map((vc) => (
+                  <Field
+                    key={vc.id}
+                    label={`${vc.code} · ${vc.name}`}
+                    htmlFor={`classPrice_${vc.id}`}
+                  >
+                    <TextInput
+                      id={`classPrice_${vc.id}`}
+                      name={`classPrice_${vc.id}`}
+                      inputMode="numeric"
+                      defaultValue={
+                        priceByClass.get(vc.id) ?? service.priceRub
+                      }
+                    />
+                  </Field>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
+
           <Field label="Статус" htmlFor="isActive">
             <TextSelect
               id="isActive"

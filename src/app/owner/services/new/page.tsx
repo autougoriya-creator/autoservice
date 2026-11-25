@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createService } from "@/app/actions/directories";
-import { requireStaffSession } from "@/lib/tenant";
+import { prisma } from "@/lib/prisma";
+import { orgIdOf, requireStaffSession } from "@/lib/tenant";
 import { SectionTitle, SubmitButton } from "@/components/ui";
 import {
   Field,
@@ -11,14 +12,19 @@ import {
 } from "@/components/forms";
 
 export default async function NewServicePage() {
-  await requireStaffSession();
+  const session = await requireStaffSession();
+  const organizationId = orgIdOf(session);
+  const vehicleClasses = await prisma.vehicleClass.findMany({
+    where: { organizationId },
+    orderBy: { sortOrder: "asc" },
+  });
 
   return (
     <div className="max-w-xl">
       <SectionTitle
         eyebrow="Справочник"
         title="Новая услуга"
-        description="Цена в рублях, норма времени в минутах. Нормы расхода техжидкостей — после сохранения."
+        description="Базовая цена, цены по классам, норма времени. Нормы расхода техжидкостей — после сохранения."
       />
 
       <FormCard>
@@ -32,7 +38,11 @@ export default async function NewServicePage() {
             />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Цена, ₽" htmlFor="priceRub">
+            <Field
+              label="Базовая цена, ₽"
+              htmlFor="priceRub"
+              hint="Класс 1 / без класса"
+            >
               <TextInput
                 id="priceRub"
                 name="priceRub"
@@ -51,6 +61,31 @@ export default async function NewServicePage() {
               />
             </Field>
           </div>
+
+          {vehicleClasses.length > 0 ? (
+            <fieldset className="space-y-3">
+              <legend className="text-sm font-semibold text-[var(--ink)]">
+                Цены по классам авто
+              </legend>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {vehicleClasses.map((vc) => (
+                  <Field
+                    key={vc.id}
+                    label={`${vc.code} · ${vc.name}`}
+                    htmlFor={`classPrice_${vc.id}`}
+                  >
+                    <TextInput
+                      id={`classPrice_${vc.id}`}
+                      name={`classPrice_${vc.id}`}
+                      inputMode="numeric"
+                      placeholder="—"
+                    />
+                  </Field>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
+
           <Field label="Статус" htmlFor="isActive">
             <TextSelect id="isActive" name="isActive" defaultValue="1">
               <option value="1">Активна</option>

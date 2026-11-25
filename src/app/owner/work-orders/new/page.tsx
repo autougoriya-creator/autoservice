@@ -20,10 +20,12 @@ export default async function NewWorkOrderPage({
     }),
     prisma.vehicle.findMany({
       where: { organizationId },
+      include: { vehicleClass: true },
       orderBy: { plate: "asc" },
     }),
     prisma.service.findMany({
       where: { organizationId, isActive: true },
+      include: { classPrices: true },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -33,7 +35,7 @@ export default async function NewWorkOrderPage({
       <SectionTitle
         eyebrow="Операции"
         title="Новый заказ-наряд"
-        description="Выберите клиента, автомобиль и услуги. Цены фиксируются в документе."
+        description="Цена по классу авто, время — из нормы услуги (можно увеличить при приёмке)."
       />
 
       {customers.length === 0 || services.length === 0 ? (
@@ -65,12 +67,20 @@ export default async function NewWorkOrderPage({
             make: v.make,
             model: v.model,
             plate: v.plate,
+            vehicleClassId: v.vehicleClassId,
+            vehicleClass: v.vehicleClass
+              ? { code: v.vehicleClass.code, name: v.vehicleClass.name }
+              : null,
           }))}
           services={services.map((s) => ({
             id: s.id,
             name: s.name,
             priceRub: s.priceRub,
             durationMin: s.durationMin,
+            classPrices: s.classPrices.map((p) => ({
+              vehicleClassId: p.vehicleClassId,
+              priceRub: p.priceRub,
+            })),
           }))}
           initialCustomerId={customerId}
           initialVehicleId={vehicleId}

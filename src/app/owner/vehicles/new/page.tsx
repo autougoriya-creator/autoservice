@@ -20,17 +20,23 @@ export default async function NewVehiclePage({
   const organizationId = orgIdOf(session);
   const { customerId } = await searchParams;
 
-  const customers = await prisma.customer.findMany({
-    where: { organizationId },
-    orderBy: { name: "asc" },
-  });
+  const [customers, vehicleClasses] = await Promise.all([
+    prisma.customer.findMany({
+      where: { organizationId },
+      orderBy: { name: "asc" },
+    }),
+    prisma.vehicleClass.findMany({
+      where: { organizationId },
+      orderBy: { sortOrder: "asc" },
+    }),
+  ]);
 
   return (
     <div className="max-w-xl">
       <SectionTitle
         eyebrow="Справочник"
         title="Новое авто"
-        description="Выберите клиента и укажите марку, модель и госномер."
+        description="Клиент, класс автомобиля, марка, модель и госномер."
       />
 
       <FormCard>
@@ -55,6 +61,24 @@ export default async function NewVehiclePage({
                   <option key={c.id} value={c.id}>
                     {c.name}
                     {c.phone ? ` · ${c.phone}` : ""}
+                  </option>
+                ))}
+              </TextSelect>
+            </Field>
+            <Field
+              label="Класс автомобиля"
+              htmlFor="vehicleClassId"
+              hint="От класса зависит цена услуг"
+            >
+              <TextSelect
+                id="vehicleClassId"
+                name="vehicleClassId"
+                defaultValue={vehicleClasses[0]?.id ?? ""}
+              >
+                <option value="">— без класса —</option>
+                {vehicleClasses.map((vc) => (
+                  <option key={vc.id} value={vc.id}>
+                    {vc.code} · {vc.name}
                   </option>
                 ))}
               </TextSelect>
