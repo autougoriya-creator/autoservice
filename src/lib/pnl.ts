@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { buildAdminUpsellBonus } from "@/lib/admin-upsell";
 import {
   dealCostForPostShare,
   dealCostForRevenue,
@@ -19,7 +20,8 @@ export async function buildPostPnL(
 ) {
   const { start, end } = periodBounds(period, anchor);
 
-  const [posts, assignments, shifts, workOrders, profiles] = await Promise.all([
+  const [posts, assignments, shifts, workOrders, profiles, adminUpsell] =
+    await Promise.all([
     prisma.servicePost.findMany({
       where: { organizationId, isActive: true },
       orderBy: { sortOrder: "asc" },
@@ -39,6 +41,7 @@ export async function buildPostPnL(
       where: { organizationId, isActive: true },
       include: { user: true },
     }),
+    buildAdminUpsellBonus(organizationId, period, anchor),
   ]);
 
   const activeAssignments = assignments.filter(
@@ -110,7 +113,7 @@ export async function buildPostPnL(
     };
   });
 
-  const totals = rows.reduce(
+  const postTotals = rows.reduce(
     (acc, row) => {
       acc.revenue += row.revenue;
       acc.payroll += row.payroll;
@@ -120,7 +123,25 @@ export async function buildPostPnL(
     { revenue: 0, payroll: 0, margin: 0 },
   );
 
-  return { start, end, period, rows, totals, profiles };
+  const adminBonusPayroll = adminUpsell.bonusTotalRub;
+  const totals = {
+    revenue: postTotals.revenue,
+    payroll: postTotals.payroll + adminBonusPayroll,
+    margin: postTotals.revenue - (postTotals.payroll + adminBonusPayroll),
+    adminUpsellBonus: adminBonusPayroll,
+    adminUpsellAmount: adminUpsell.upsellTotalRub,
+    adminUpsellPercent: adminUpsell.bonusPercent,
+  };
+
+  return {
+    start,
+    end,
+    period,
+    rows,
+    totals,
+    profiles,
+    adminUpsell,
+  };
 }
 
 export async function buildStaffPayrollEstimate(
@@ -130,19 +151,27 @@ export async function buildStaffPayrollEstimate(
   anchor = new Date(),
 ) {
   const { start, end } = periodBounds(period, anchor);
-  const profile = await prisma.staffProfile.findFirst({
-    where: { organizationId, userId, isActive: true },
-    include: {
-      user: true,
-      assignments: {
-        include: { post: true },
+  const [profile, membership, adminUpsell] = await Promise.all([
+    prisma.staffProfile.findFirst({
+      where: { organizationId, userId, isActive: true },
+      include: {
+        user: true,
+        assignments: {
+          include: { post: true },
+        },
+        shifts: { include: { post: true } },
       },
-      shifts: { include: { post: true } },
-    },
-  });
+    }),
+    prisma.membership.findFirst({
+      where: { organizationId, userId },
+      select: { role: true },
+    }),
+    buildAdminUpsellBonus(organizationId, period, anchor),
+  ]);
 
   if (!profile) return null;
 
+  const isAdminRole = membership?.role === "ADMIN";
   const openAssignments = profile.assignments.filter((a) => a.activeTo == null);
   const postIds = openAssignments.map((a) => a.postId);
   const shareByPost = new Map(
@@ -175,7 +204,7 @@ export async function buildStaffPayrollEstimate(
     (s) => s.endsAt >= start && s.startsAt <= end,
   );
 
-  const estimate =
+  const baseEstimate =
     String(profile.payMode) === "SALARY"
       ? salaryCostForPeriod(
           profile.salaryRub,
@@ -183,6 +212,9 @@ export async function buildStaffPayrollEstimate(
             (periodShifts.length ? 1 : 0),
         )
       : dealCostForRevenue(attributed, profile.dealPercent);
+
+  const upsellBonus = isAdminRole ? adminUpsell.bonusTotalRub : 0;
+  const estimate = baseEstimate + upsellBonus;
 
   return {
     profile,
@@ -202,6 +234,11 @@ export async function buildStaffPayrollEstimate(
       when: wo.completedAt ?? wo.scheduledAt ?? wo.createdAt,
     })),
     revenue,
+    baseEstimate,
+    upsellBonus,
+    upsellBonusPercent: isAdminRole ? adminUpsell.bonusPercent : 0,
+    upsellRows: isAdminRole ? adminUpsell.rows : [],
     estimate,
+    isAdminRole,
   };
 }

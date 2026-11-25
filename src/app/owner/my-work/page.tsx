@@ -49,7 +49,7 @@ export default async function MyWorkPage({
           <SectionTitle
             eyebrow="Моя смена"
             title="Кабинет сотрудника"
-            description="У администратора нет профиля мойщика/слесаря. График и посты — в разделах «График» и «Рабочий стол»."
+            description="У администратора пока нет профиля оплаты. Владелец может создать оклад и % бонуса за допродажи в разделе «Персонал»."
           />
           <Link
             href="/owner/schedule"
@@ -63,8 +63,19 @@ export default async function MyWorkPage({
     redirect("/owner/desk");
   }
 
-  const { profile, openAssignments, periodShifts, periodWOs, revenue, estimate } =
-    data;
+  const {
+    profile,
+    openAssignments,
+    periodShifts,
+    periodWOs,
+    revenue,
+    estimate,
+    baseEstimate,
+    upsellBonus,
+    upsellBonusPercent,
+    upsellRows,
+    isAdminRole,
+  } = data;
 
   return (
     <div className="space-y-8">
@@ -75,13 +86,19 @@ export default async function MyWorkPage({
           profile.payMode === "SALARY"
             ? ` · ${formatRub(profile.salaryRub)}/мес`
             : ` · ${profile.dealPercent}%`
+        }${
+          isAdminRole && upsellBonusPercent > 0
+            ? ` · бонус допродаж ${upsellBonusPercent}%`
+            : ""
         }`}
       />
 
       <Toolbar>
         <div className="flex flex-wrap gap-2">
           {openAssignments.length === 0 ? (
-            <StatusPill>Пост не закреплён</StatusPill>
+            <StatusPill>
+              {isAdminRole ? "Администратор (без поста)" : "Пост не закреплён"}
+            </StatusPill>
           ) : (
             openAssignments.map((a) => (
               <StatusPill key={a.id} tone="ok">
@@ -100,7 +117,11 @@ export default async function MyWorkPage({
         </div>
       </Toolbar>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div
+        className={`grid gap-4 sm:grid-cols-2 ${
+          isAdminRole ? "lg:grid-cols-3" : ""
+        }`}
+      >
         <div className="rounded-xl border border-[var(--line)] bg-white/85 p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
             Выручка на моих постах
@@ -120,9 +141,70 @@ export default async function MyWorkPage({
             {profile.payMode === "SALARY"
               ? "Доля оклада по дням смен в периоде"
               : `${profile.dealPercent}% от вашей доли выручки на постах`}
+            {isAdminRole && upsellBonus > 0
+              ? ` + бонус допродаж ${formatRub(upsellBonus)}`
+              : ""}
           </p>
         </div>
+        {isAdminRole ? (
+          <div className="rounded-xl border border-[var(--line)] bg-white/85 p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+              Бонус за допродажи
+            </p>
+            <p className="brand-mark mt-3 text-3xl text-[var(--ink)]">
+              {formatRub(upsellBonus)}
+            </p>
+            <p className="mt-2 text-xs text-[var(--ink-soft)]">
+              {upsellBonusPercent}% от доп. услуг после самозаписи
+              {baseEstimate > 0
+                ? ` · оклад/база ${formatRub(baseEstimate)}`
+                : ""}
+            </p>
+          </div>
+        ) : null}
       </div>
+
+      {isAdminRole ? (
+        <section>
+          <h2 className="brand-mark mb-4 text-xl text-[var(--ink)]">
+            Допродажи периода
+          </h2>
+          {upsellRows.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-[var(--line)] bg-white/60 px-5 py-8 text-sm text-[var(--ink-soft)]">
+              Пока нет закрытых ЗН с допродажами после самозаписи на одну
+              услугу.
+            </p>
+          ) : (
+            <DataTable
+              headers={["ЗН", "Запись → ЗН", "Допродажа", "Бонус", "Когда"]}
+            >
+              {upsellRows.map((row) => (
+                <tr key={row.workOrderId}>
+                  <td className="px-4 py-3 font-medium">
+                    <Link
+                      href={`/owner/work-orders/${row.workOrderId}`}
+                      className="hover:text-[var(--accent)]"
+                    >
+                      {workOrderNumberLabel(row.number)}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-[var(--ink-soft)]">
+                    {row.bookedServiceName}: {formatRub(row.bookingPlannedRub)} →{" "}
+                    {formatRub(row.workOrderTotalRub)}
+                  </td>
+                  <td className="px-4 py-3">{formatRub(row.upsellRub)}</td>
+                  <td className="px-4 py-3 font-medium text-[var(--accent)]">
+                    {formatRub(row.bonusRub)}
+                  </td>
+                  <td className="px-4 py-3 text-[var(--ink-soft)]">
+                    {formatDateTime(row.completedAt)}
+                  </td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+        </section>
+      ) : null}
 
       <section>
         <h2 className="brand-mark mb-4 text-xl text-[var(--ink)]">Мой график</h2>

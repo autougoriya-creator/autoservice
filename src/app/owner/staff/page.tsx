@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   assignStaffToPost,
   clearPostAssignment,
+  updateAdminUpsellBonusPercent,
   upsertStaffProfile,
 } from "@/app/actions/staff";
 import { prisma } from "@/lib/prisma";
@@ -23,15 +24,20 @@ export default async function StaffPage() {
   const session = await requireOwnerSession();
   const organizationId = orgIdOf(session);
 
-  const [profiles, staffUsers, posts, assignments] = await Promise.all([
+  const [org, profiles, staffUsers, posts, assignments] = await Promise.all([
+    prisma.organization.findFirst({
+      where: { id: organizationId },
+      select: { adminUpsellBonusPercent: true },
+    }),
     prisma.staffProfile.findMany({
       where: { organizationId },
       include: { user: true },
       orderBy: { createdAt: "asc" },
     }),
     prisma.membership.findMany({
-      where: { organizationId, role: "STAFF" },
+      where: { organizationId, role: { in: ["STAFF", "ADMIN"] } },
       include: { user: true },
+      orderBy: { role: "asc" },
     }),
     prisma.servicePost.findMany({
       where: { organizationId, isActive: true },
@@ -48,13 +54,14 @@ export default async function StaffPage() {
 
   const profiledUserIds = new Set(profiles.map((p) => p.userId));
   const unprofiled = staffUsers.filter((m) => !profiledUserIds.has(m.userId));
+  const bonusPercent = org?.adminUpsellBonusPercent ?? 0;
 
   return (
     <div className="space-y-10">
       <SectionTitle
         eyebrow="Персонал"
         title="Сотрудники и оплата"
-        description="Мойщики и слесари: режим оплаты (сделка % или оклад). На одном посту может быть несколько исполнителей — доли в карточке поста."
+        description="Мойщики, слесари и администратор: сделка %, оклад, бонус админу за допродажи после самозаписи."
       />
 
       <Toolbar>
@@ -67,7 +74,33 @@ export default async function StaffPage() {
         <ButtonLink href="/owner/schedule" variant="ghost">
           График смен
         </ButtonLink>
+        <ButtonLink href="/owner/pnl" variant="ghost">
+          Экономика
+        </ButtonLink>
       </Toolbar>
+
+      <FormCard>
+        <h2 className="brand-mark mb-2 text-lg">Бонус администратору за допродажи</h2>
+        <p className="mb-4 text-sm text-[var(--ink-soft)]">
+          Если клиент самозаписался на одну услугу, а заказ-наряд закрыт с
+          дополнительными услугами — администратор получает % от суммы этих
+          допродаж к ЗП.
+        </p>
+        <form action={updateAdminUpsellBonusPercent} className="flex flex-wrap items-end gap-4">
+          <Field label="% от допродаж" htmlFor="adminUpsellBonusPercent">
+            <TextInput
+              id="adminUpsellBonusPercent"
+              name="adminUpsellBonusPercent"
+              inputMode="numeric"
+              defaultValue={String(bonusPercent)}
+              className="w-28"
+            />
+          </Field>
+          <FormActions>
+            <SubmitButton className="sm:w-auto">Сохранить %</SubmitButton>
+          </FormActions>
+        </form>
+      </FormCard>
 
       <DataTable
         headers={["Сотрудник", "Должность", "Оплата", "Посты", ""]}
@@ -117,12 +150,13 @@ export default async function StaffPage() {
         <FormCard>
           <h2 className="brand-mark mb-4 text-lg">Профиль сотрудника</h2>
           <form action={upsertStaffProfile} className="space-y-4">
-            <Field label="Пользователь (роль «Сотрудник»)" htmlFor="userId">
+            <Field label="Пользователь (сотрудник или админ)" htmlFor="userId">
               <TextSelect id="userId" name="userId" required>
                 <option value="">Выберите…</option>
                 {staffUsers.map((m) => (
                   <option key={m.userId} value={m.userId}>
-                    {m.user.name} · {m.user.email}
+                    {m.user.name} · {m.role === "ADMIN" ? "админ" : "сотрудник"} ·{" "}
+                    {m.user.email}
                     {profiledUserIds.has(m.userId) ? " (есть профиль)" : ""}
                   </option>
                 ))}
