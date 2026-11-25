@@ -13,8 +13,9 @@ const hourLabel = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
 function blockTone(kind: BoardBlock["kind"], status: string) {
   if (kind === "work_order") {
     if (status === "IN_PROGRESS") return "bg-[var(--accent)] text-white border-transparent";
-    if (status === "DONE") return "bg-[var(--teal)]/90 text-white border-transparent";
-    return "bg-[#1a3a4a] text-white border-transparent";
+    if (status === "CLOSED") return "bg-[var(--teal)]/90 text-white border-transparent";
+    if (status === "CONFIRMED") return "bg-[#1a3a4a] text-white border-transparent";
+    return "bg-[#243d4a] text-white border-transparent";
   }
   if (status === "IN_PROGRESS") return "bg-[var(--accent-deep)] text-white border-transparent";
   if (status === "DONE") return "bg-[var(--teal-soft)] text-[var(--teal)] border-transparent";

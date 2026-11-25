@@ -19,7 +19,7 @@ export default async function ClientsPage() {
       <SectionTitle
         eyebrow="Справочник"
         title="Клиенты"
-        description="База клиентов точки. С планшета удобно искать по имени или телефону и открывать карточку."
+        description="Идентификатор клиента — телефон (уникален в точке). Аналитика строится по телефону."
       />
 
       <Toolbar>
@@ -32,10 +32,10 @@ export default async function ClientsPage() {
       {clients.length === 0 ? (
         <EmptyStub
           title="Клиентов пока нет"
-          description="Добавьте первого клиента, затем привяжите автомобиль."
+          description="Добавьте первого клиента с телефоном, затем привяжите автомобиль."
         />
       ) : (
-        <DataTable headers={["Имя", "Телефон", "Авто", "Заказ-наряды", ""]}>
+        <DataTable headers={["Телефон (ID)", "Имя", "Авто", "Заказ-наряды", ""]}>
           {clients.map((client) => (
             <tr key={client.id}>
               <td className="px-4 py-3 font-medium text-[var(--ink)]">
@@ -43,11 +43,11 @@ export default async function ClientsPage() {
                   href={`/owner/clients/${client.id}`}
                   className="hover:text-[var(--accent)]"
                 >
-                  {client.name}
+                  {client.phone}
                 </Link>
               </td>
               <td className="px-4 py-3 text-[var(--ink-soft)]">
-                {client.phone ?? "—"}
+                {client.name}
               </td>
               <td className="px-4 py-3 text-[var(--ink-soft)]">
                 {client._count.vehicles}

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { WorkOrderStatus } from "@prisma/client";
+import type { PaymentMethod, WorkOrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { orgIdOf, requireStaffSession } from "@/lib/tenant";
 
@@ -12,11 +12,18 @@ function str(formData: FormData, key: string) {
 }
 
 const allowedStatuses: WorkOrderStatus[] = [
-  "DRAFT",
-  "OPEN",
+  "NEW",
+  "NEW_FROM_CLIENT",
+  "CONFIRMED",
   "IN_PROGRESS",
-  "DONE",
-  "CANCELLED",
+  "CLOSED",
+];
+
+const allowedPayments: PaymentMethod[] = [
+  "CASH",
+  "TERMINAL",
+  "INVOICE",
+  "CASH_AND_TERMINAL",
 ];
 
 export async function createWorkOrder(formData: FormData) {
@@ -58,7 +65,7 @@ export async function createWorkOrder(formData: FormData) {
     data: {
       organizationId,
       number: updated.workOrderSeq,
-      status: "OPEN",
+      status: "NEW",
       customerId,
       vehicleId,
       notes,
@@ -83,23 +90,66 @@ export async function updateWorkOrderStatus(formData: FormData) {
   const organizationId = orgIdOf(session);
   const id = str(formData, "id");
   const status = str(formData, "status") as WorkOrderStatus;
+  const paymentMethodRaw = str(formData, "paymentMethod");
 
   if (!id || !allowedStatuses.includes(status)) {
     throw new Error("Некорректный статус");
   }
 
+  if (status === "CLOSED") {
+    if (!allowedPayments.includes(paymentMethodRaw as PaymentMethod)) {
+      throw new Error("Укажите вид оплаты для закрытия заказ-наряда");
+    }
+    const now = new Date();
+    await prisma.workOrder.updateMany({
+      where: { id, organizationId },
+      data: {
+        status,
+        paymentMethod: paymentMethodRaw as PaymentMethod,
+        paidAt: now,
+        completedAt: now,
+      },
+    });
+  } else {
+    await prisma.workOrder.updateMany({
+      where: { id, organizationId },
+      data: {
+        status,
+        completedAt: null,
+        paidAt: null,
+        paymentMethod: null,
+      },
+    });
+  }
+
+  revalidatePath("/owner/work-orders");
+  revalidatePath(`/owner/work-orders/${id}`);
+  revalidatePath("/owner/cash");
+  revalidatePath("/client");
+  revalidatePath("/client/orders");
+  redirect(`/owner/work-orders/${id}`);
+}
+
+/** Админ / мойщик: ТС заехало → в работе */
+export async function markWorkOrderInProgress(formData: FormData) {
+  const session = await requireStaffSession();
+  const organizationId = orgIdOf(session);
+  const id = str(formData, "id");
+  if (!id) throw new Error("Некорректный заказ-наряд");
+
   await prisma.workOrder.updateMany({
     where: { id, organizationId },
     data: {
-      status,
-      completedAt: status === "DONE" ? new Date() : null,
+      status: "IN_PROGRESS",
+      completedAt: null,
+      paidAt: null,
+      paymentMethod: null,
     },
   });
 
   revalidatePath("/owner/work-orders");
   revalidatePath(`/owner/work-orders/${id}`);
-  revalidatePath("/client");
-  revalidatePath("/client/orders");
+  revalidatePath("/owner/desk");
   redirect(`/owner/work-orders/${id}`);
 }
 

@@ -3,6 +3,7 @@ import {
   Role,
   BookingStatus,
   WorkOrderStatus,
+  PaymentMethod,
   PayMode,
 } from "@prisma/client";
 
@@ -105,12 +106,13 @@ async function main() {
     ),
   );
 
+  // Клиент = телефон (нормализованный ID в тенанте)
   const customerAlex = await prisma.customer.create({
     data: {
       organizationId: org.id,
       userId: clientUser.id,
       name: "Алексей Клиентов",
-      phone: "+7 (900) 333-44-55",
+      phone: "+79003334455",
       email: "client@demo.local",
       notes: "Постоянный клиент, предпочитает пост 1",
     },
@@ -120,7 +122,7 @@ async function main() {
     data: {
       organizationId: org.id,
       name: "Мария Орлова",
-      phone: "+7 (900) 555-66-77",
+      phone: "+79005556677",
       email: "maria@example.com",
     },
   });
@@ -129,7 +131,7 @@ async function main() {
     data: {
       organizationId: org.id,
       name: "Иван Петров",
-      phone: "+7 (900) 888-99-00",
+      phone: "+79008889900",
     },
   });
 
@@ -355,6 +357,8 @@ async function main() {
     status: WorkOrderStatus;
     notes?: string;
     completedAt?: Date;
+    paidAt?: Date;
+    paymentMethod?: PaymentMethod;
     postId?: string;
     scheduledAt?: Date;
     lines: { serviceId: string; quantity?: number }[];
@@ -386,19 +390,27 @@ async function main() {
         scheduledAt: opts.scheduledAt,
         notes: opts.notes,
         completedAt: opts.completedAt,
+        paidAt: opts.paidAt,
+        paymentMethod: opts.paymentMethod,
         lines: { create: lineData },
       },
     });
   }
 
+  const closedToday = at(10, 15);
+  const closedToday2 = at(11, 40);
+  const closedOld = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+
   await createWorkOrder({
     customerId: customerAlex.id,
     vehicleId: camry.id,
-    status: WorkOrderStatus.DONE,
-    completedAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
+    status: WorkOrderStatus.CLOSED,
+    completedAt: closedOld,
+    paidAt: closedOld,
+    paymentMethod: PaymentMethod.CASH,
     postId: posts[0].id,
-    scheduledAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
-    notes: "Выполнено на посту 1",
+    scheduledAt: closedOld,
+    notes: "Закрыт наличными на посту 1",
     lines: [
       { serviceId: services[1].id },
       { serviceId: services[5].id },
@@ -408,9 +420,37 @@ async function main() {
   await createWorkOrder({
     customerId: customerAlex.id,
     vehicleId: camry.id,
-    status: WorkOrderStatus.DONE,
+    status: WorkOrderStatus.CLOSED,
     completedAt: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000),
+    paidAt: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000),
+    paymentMethod: PaymentMethod.TERMINAL,
     lines: [{ serviceId: services[2].id }],
+  });
+
+  await createWorkOrder({
+    customerId: customerMaria.id,
+    vehicleId: polo.id,
+    status: WorkOrderStatus.CLOSED,
+    completedAt: closedToday,
+    paidAt: closedToday,
+    paymentMethod: PaymentMethod.CASH,
+    postId: posts[1].id,
+    scheduledAt: closedToday,
+    notes: "Оплата наличными сегодня",
+    lines: [{ serviceId: services[0].id }],
+  });
+
+  await createWorkOrder({
+    customerId: customerIvan.id,
+    vehicleId: vesta.id,
+    status: WorkOrderStatus.CLOSED,
+    completedAt: closedToday2,
+    paidAt: closedToday2,
+    paymentMethod: PaymentMethod.CASH_AND_TERMINAL,
+    postId: posts[0].id,
+    scheduledAt: closedToday2,
+    notes: "Часть налом, часть терминалом",
+    lines: [{ serviceId: services[1].id }],
   });
 
   await createWorkOrder({
@@ -429,17 +469,17 @@ async function main() {
   await createWorkOrder({
     customerId: customerMaria.id,
     vehicleId: polo.id,
-    status: WorkOrderStatus.OPEN,
+    status: WorkOrderStatus.CONFIRMED,
     postId: posts[1].id,
     scheduledAt: at(17, 0),
-    notes: "Вечерний экспресс",
+    notes: "Подтверждён — вечерний экспресс",
     lines: [{ serviceId: services[0].id }],
   });
 
   await createWorkOrder({
     customerId: customerIvan.id,
     vehicleId: vesta.id,
-    status: WorkOrderStatus.OPEN,
+    status: WorkOrderStatus.NEW,
     postId: posts[0].id,
     scheduledAt: at(18, 30),
     lines: [{ serviceId: services[1].id }],
@@ -448,10 +488,10 @@ async function main() {
   await createWorkOrder({
     customerId: customerAlex.id,
     vehicleId: sportage.id,
-    status: WorkOrderStatus.OPEN,
+    status: WorkOrderStatus.NEW_FROM_CLIENT,
     postId: posts[2].id,
     scheduledAt: at(13, 0),
-    notes: "Детейлинг — слот после химчистки",
+    notes: "Заявка от клиента — детейлинг",
     lines: [{ serviceId: services[5].id }],
   });
 

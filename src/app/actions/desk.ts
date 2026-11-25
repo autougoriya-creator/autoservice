@@ -9,6 +9,7 @@ import {
   summarizeServiceNames,
   type PlannedLineInput,
 } from "@/lib/booking-plan";
+import { normalizePhone } from "@/lib/phone";
 import { orgIdOf, requireManagementSession } from "@/lib/tenant";
 
 function revalidateDesk() {
@@ -184,23 +185,34 @@ export async function updateDeskWorkOrder(input: {
     if (Number.isNaN(startsAt.getTime())) {
       return { ok: false, error: "Некорректное время" };
     }
-    const allowed = ["DRAFT", "OPEN", "IN_PROGRESS", "DONE", "CANCELLED"];
+    const allowed = [
+      "NEW",
+      "NEW_FROM_CLIENT",
+      "CONFIRMED",
+      "IN_PROGRESS",
+      "CLOSED",
+    ];
     if (!allowed.includes(input.status)) {
       return { ok: false, error: "Некорректный статус" };
     }
 
+    const closing = input.status === "CLOSED";
+    const now = closing ? new Date() : null;
     const updated = await prisma.workOrder.updateMany({
       where: { id: input.id, organizationId },
       data: {
         postId: input.postId,
         scheduledAt: startsAt,
         status: input.status as
-          | "DRAFT"
-          | "OPEN"
+          | "NEW"
+          | "NEW_FROM_CLIENT"
+          | "CONFIRMED"
           | "IN_PROGRESS"
-          | "DONE"
-          | "CANCELLED",
-        completedAt: input.status === "DONE" ? new Date() : null,
+          | "CLOSED",
+        completedAt: now,
+        paidAt: now,
+        // Закрытие со стола без выбора оплаты — наличные (полный расчёт в карточке ЗН)
+        paymentMethod: closing ? "CASH" : null,
       },
     });
     if (updated.count === 0) {
@@ -256,14 +268,25 @@ export async function createDeskBooking(input: {
 
     if (!customer) {
       const name = (input.newCustomerName || "").trim();
+      const phone = normalizePhone(input.newCustomerPhone || "");
       if (!name) return { ok: false, error: "Укажите клиента" };
-      customer = await prisma.customer.create({
-        data: {
-          organizationId,
-          name,
-          phone: input.newCustomerPhone?.trim() || null,
-        },
+      if (!phone) {
+        return { ok: false, error: "Укажите телефон — идентификатор клиента" };
+      }
+      const dup = await prisma.customer.findFirst({
+        where: { organizationId, phone },
       });
+      if (dup) {
+        customer = dup;
+      } else {
+        customer = await prisma.customer.create({
+          data: {
+            organizationId,
+            name,
+            phone,
+          },
+        });
+      }
     }
 
     const clientId = await ensureBookingUser(organizationId, customer);
@@ -342,7 +365,7 @@ export async function createDeskBooking(input: {
 
 async function ensureBookingUser(
   organizationId: string,
-  customer: { id: string; name: string; phone: string | null; userId: string | null },
+  customer: { id: string; name: string; phone: string; userId: string | null },
 ) {
   if (customer.userId) return customer.userId;
 

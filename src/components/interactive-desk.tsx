@@ -37,7 +37,7 @@ import {
 } from "@/lib/format";
 
 type Post = { id: string; name: string };
-type CustomerOpt = { id: string; name: string; phone: string | null };
+type CustomerOpt = { id: string; name: string; phone: string };
 type ServiceOpt = {
   id: string;
   name: string;
@@ -65,9 +65,11 @@ function blockTone(kind: DeskBlock["kind"], status: string) {
   if (kind === "work_order") {
     if (status === "IN_PROGRESS")
       return "bg-[var(--accent)] text-white border-transparent";
-    if (status === "DONE")
+    if (status === "CLOSED")
       return "bg-[var(--teal)]/90 text-white border-transparent";
-    return "bg-[#1a3a4a] text-white border-transparent";
+    if (status === "CONFIRMED")
+      return "bg-[#1a3a4a] text-white border-transparent";
+    return "bg-[#243d4a] text-white border-transparent";
   }
   if (status === "IN_PROGRESS")
     return "bg-[var(--accent-deep)] text-white border-transparent";

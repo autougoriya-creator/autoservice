@@ -34,7 +34,9 @@ export default async function OwnerDashboardPage() {
     prisma.workOrder.count({
       where: {
         organizationId: orgId,
-        status: { in: ["OPEN", "IN_PROGRESS"] },
+        status: {
+          in: ["NEW", "NEW_FROM_CLIENT", "CONFIRMED", "IN_PROGRESS"],
+        },
       },
     }),
     prisma.workOrder.findMany({

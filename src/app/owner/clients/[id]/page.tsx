@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { deleteCustomer, updateCustomer } from "@/app/actions/directories";
 import { prisma } from "@/lib/prisma";
+import { workOrderStatusLabel } from "@/lib/format";
 import { orgIdOf, requireStaffSession } from "@/lib/tenant";
 import { ButtonLink, SectionTitle, SubmitButton } from "@/components/ui";
 import {
@@ -40,7 +41,7 @@ export default async function ClientEditPage({
       <SectionTitle
         eyebrow="Справочник"
         title={client.name}
-        description="Карточка клиента: контакты, автомобили и недавние заказ-наряды."
+        description={`ID клиента: ${client.phone}. Контакты, автомобили и недавние заказ-наряды.`}
       />
 
       <FormCard>
@@ -50,12 +51,13 @@ export default async function ClientEditPage({
             <TextInput id="name" name="name" required defaultValue={client.name} />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Телефон" htmlFor="phone">
+            <Field label="Телефон (ID клиента)" htmlFor="phone">
               <TextInput
                 id="phone"
                 name="phone"
                 type="tel"
-                defaultValue={client.phone ?? ""}
+                required
+                defaultValue={client.phone}
               />
             </Field>
             <Field label="Email" htmlFor="email">
@@ -133,7 +135,9 @@ export default async function ClientEditPage({
                   <span>
                     ЗН-{String(wo.number).padStart(4, "0")} · {wo.vehicle.plate}
                   </span>
-                  <span className="text-sm text-[var(--ink-soft)]">{wo.status}</span>
+                  <span className="text-sm text-[var(--ink-soft)]">
+                    {workOrderStatusLabel[wo.status] ?? wo.status}
+                  </span>
                 </Link>
               </li>
             ))}

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { normalizePhone } from "@/lib/phone";
 import { orgIdOf, requireStaffSession } from "@/lib/tenant";
 
 function str(formData: FormData, key: string) {
@@ -21,17 +22,38 @@ function intOr(formData: FormData, key: string, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+async function assertUniquePhone(
+  organizationId: string,
+  phone: string,
+  excludeId?: string,
+) {
+  const existing = await prisma.customer.findFirst({
+    where: {
+      organizationId,
+      phone,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+  });
+  if (existing) {
+    throw new Error("Клиент с таким телефоном уже есть в этой точке");
+  }
+}
+
 export async function createCustomer(formData: FormData) {
   const session = await requireStaffSession();
   const organizationId = orgIdOf(session);
   const name = str(formData, "name");
+  const phone = normalizePhone(str(formData, "phone"));
   if (!name) throw new Error("Укажите имя клиента");
+  if (!phone) throw new Error("Укажите телефон — это идентификатор клиента");
+
+  await assertUniquePhone(organizationId, phone);
 
   const customer = await prisma.customer.create({
     data: {
       organizationId,
       name,
-      phone: optStr(formData, "phone"),
+      phone,
       email: optStr(formData, "email"),
       notes: optStr(formData, "notes"),
     },
@@ -46,13 +68,17 @@ export async function updateCustomer(formData: FormData) {
   const organizationId = orgIdOf(session);
   const id = str(formData, "id");
   const name = str(formData, "name");
+  const phone = normalizePhone(str(formData, "phone"));
   if (!id || !name) throw new Error("Некорректные данные");
+  if (!phone) throw new Error("Укажите телефон — это идентификатор клиента");
+
+  await assertUniquePhone(organizationId, phone, id);
 
   await prisma.customer.updateMany({
     where: { id, organizationId },
     data: {
       name,
-      phone: optStr(formData, "phone"),
+      phone,
       email: optStr(formData, "email"),
       notes: optStr(formData, "notes"),
     },

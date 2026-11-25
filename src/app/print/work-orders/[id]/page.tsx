@@ -5,6 +5,7 @@ import {
   formatDate,
   formatDateTime,
   formatRub,
+  paymentMethodLabel,
   workOrderStatusLabel,
 } from "@/lib/format";
 import {
@@ -139,7 +140,12 @@ export default async function WorkOrderPrintPage({
           <div className="text-sm text-[var(--ink-soft)]">
             <p>Общее время: {formatDuration(duration)}</p>
             {workOrder.completedAt ? (
-              <p>Завершён: {formatDate(workOrder.completedAt)}</p>
+              <p>Закрыт: {formatDate(workOrder.completedAt)}</p>
+            ) : null}
+            {workOrder.paymentMethod ? (
+              <p>
+                Оплата: {paymentMethodLabel[workOrder.paymentMethod]}
+              </p>
             ) : null}
             {workOrder.notes ? <p className="mt-2">Примечание: {workOrder.notes}</p> : null}
           </div>

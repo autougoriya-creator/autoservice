@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  markWorkOrderInProgress,
   updateWorkOrderNotes,
   updateWorkOrderStatus,
 } from "@/app/actions/work-orders";
@@ -8,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import {
   formatDateTime,
   formatRub,
+  paymentMethodLabel,
   workOrderStatusLabel,
   workOrderStatusTone,
 } from "@/lib/format";
@@ -49,6 +51,7 @@ export default async function WorkOrderDetailPage({
 
   const total = workOrderTotal(workOrder.lines);
   const duration = workOrderDuration(workOrder.lines);
+  const canArrive = workOrder.status !== "IN_PROGRESS" && workOrder.status !== "CLOSED";
 
   return (
     <div className="space-y-6">
@@ -80,7 +83,7 @@ export default async function WorkOrderDetailPage({
             {workOrder.customer.name}
           </Link>
           <p className="mt-1 text-sm text-[var(--ink-soft)]">
-            {workOrder.customer.phone ?? "Телефон не указан"}
+            Телефон (ID): {workOrder.customer.phone}
           </p>
         </FormCard>
         <FormCard>
@@ -126,7 +129,27 @@ export default async function WorkOrderDetailPage({
           </p>
           <p className="brand-mark text-2xl">{formatRub(total)}</p>
         </div>
+        {workOrder.paymentMethod ? (
+          <p className="mt-3 text-sm text-[var(--ink-soft)]">
+            Оплата: {paymentMethodLabel[workOrder.paymentMethod]}
+            {workOrder.paidAt
+              ? ` · ${formatDateTime(workOrder.paidAt)}`
+              : null}
+          </p>
+        ) : null}
       </FormCard>
+
+      {canArrive ? (
+        <FormCard>
+          <form action={markWorkOrderInProgress} className="flex flex-wrap items-center gap-3">
+            <input type="hidden" name="id" value={workOrder.id} />
+            <p className="text-sm text-[var(--ink-soft)]">
+              При заезде ТС администратор или мойщик ставит статус «В работе».
+            </p>
+            <SubmitButton>ТС заехало → В работе</SubmitButton>
+          </form>
+        </FormCard>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
         <FormCard>
@@ -145,6 +168,23 @@ export default async function WorkOrderDetailPage({
                 ))}
               </TextSelect>
             </Field>
+            <Field label="Вид оплаты (для закрытия)" htmlFor="paymentMethod">
+              <TextSelect
+                id="paymentMethod"
+                name="paymentMethod"
+                defaultValue={workOrder.paymentMethod ?? ""}
+              >
+                <option value="">— выберите при закрытии —</option>
+                {Object.entries(paymentMethodLabel).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </TextSelect>
+            </Field>
+            <p className="text-xs text-[var(--ink-soft)]">
+              Закрытие заказ-наряда возможно только с указанием вида оплаты.
+            </p>
             <SubmitButton>Обновить статус</SubmitButton>
           </form>
         </FormCard>
