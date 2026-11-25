@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   formatDate,
+  formatDateTime,
   formatRub,
   workOrderStatusLabel,
   workOrderStatusTone,
@@ -12,11 +13,16 @@ import {
   workOrderNumberLabel,
   workOrderTotal,
 } from "@/lib/work-order";
-import { EmptyStub, SectionTitle, StatusPill } from "@/components/ui";
+import { ButtonLink, EmptyStub, SectionTitle, StatusPill } from "@/components/ui";
 
-export default async function ClientOrdersPage() {
+export default async function ClientOrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ created?: string }>;
+}) {
   const session = await requireSession(["CLIENT"]);
   const orgId = session.membership.organization.id;
+  const { created: justCreated } = await searchParams;
 
   const customer = await prisma.customer.findFirst({
     where: { organizationId: orgId, userId: session.id },
@@ -37,6 +43,19 @@ export default async function ClientOrdersPage() {
         title="Заказы"
         description="Ваши заказ-наряды в этой точке. Готовые и текущие работы."
       />
+
+      {justCreated ? (
+        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          Заявка отправлена со статусом «Новый от клиента». Администратор
+          подтвердит запись.
+        </p>
+      ) : null}
+
+      <div className="mb-4">
+        <ButtonLink href="/client/book" variant="ghost">
+          Новая запись
+        </ButtonLink>
+      </div>
 
       {workOrders.length === 0 ? (
         <EmptyStub
@@ -63,7 +82,10 @@ export default async function ClientOrdersPage() {
                       {wo.vehicle.make} {wo.vehicle.model} · {wo.vehicle.plate}
                     </p>
                     <p className="mt-1 text-sm text-[var(--ink-soft)]">
-                      {formatDate(wo.completedAt ?? wo.createdAt)} ·{" "}
+                      {wo.scheduledAt
+                        ? `Запись: ${formatDateTime(wo.scheduledAt)}`
+                        : formatDate(wo.completedAt ?? wo.createdAt)}
+                      {" · "}
                       {formatDuration(duration)}
                     </p>
                   </div>

@@ -740,7 +740,7 @@ async function main() {
   console.log("  staff@demo.local      → сотрудник / мойщик (сделка 35%)");
   console.log("  washer@demo.local     → сотрудник / мойщик (сделка 30%)");
   console.log("  mechanic@demo.local   → сотрудник / слесарь (оклад)");
-  console.log("  client@demo.local     → клиент (ЛК)");
+  console.log("  client@demo.local     → клиент (ЛК, 2 авто: Camry + Sportage)");
 }
 
 main()
