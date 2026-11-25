@@ -7,6 +7,11 @@ import { prisma } from "@/lib/prisma";
 import { resolveServicePriceRub } from "@/lib/pricing";
 import { orgIdOf, requireStaffSession } from "@/lib/tenant";
 import { applyNormWriteoff } from "@/lib/warehouse";
+import {
+  WORK_ORDER_STATUSES,
+  canMarkWorkOrderInProgress,
+  canTransitionWorkOrderStatus,
+} from "@/lib/work-order";
 
 function str(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -19,13 +24,7 @@ function intOr(formData: FormData, key: string, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-const allowedStatuses: WorkOrderStatus[] = [
-  "NEW",
-  "NEW_FROM_CLIENT",
-  "CONFIRMED",
-  "IN_PROGRESS",
-  "CLOSED",
-];
+const allowedStatuses: WorkOrderStatus[] = [...WORK_ORDER_STATUSES];
 
 const allowedPayments: PaymentMethod[] = [
   "CASH",
@@ -33,6 +32,16 @@ const allowedPayments: PaymentMethod[] = [
   "INVOICE",
   "CASH_AND_TERMINAL",
 ];
+
+function revalidateWorkOrder(id: string) {
+  revalidatePath("/owner/work-orders");
+  revalidatePath(`/owner/work-orders/${id}`);
+  revalidatePath("/owner/desk");
+  revalidatePath("/owner/my-work");
+  revalidatePath("/owner/cash");
+  revalidatePath("/client");
+  revalidatePath("/client/orders");
+}
 
 export async function createWorkOrder(formData: FormData) {
   const session = await requireStaffSession();
@@ -117,6 +126,17 @@ export async function updateWorkOrderStatus(formData: FormData) {
     throw new Error("Некорректный статус");
   }
 
+  const current = await prisma.workOrder.findFirst({
+    where: { id, organizationId },
+    select: { status: true },
+  });
+  if (!current) throw new Error("Заказ-наряд не найден");
+  if (!canTransitionWorkOrderStatus(current.status, status)) {
+    throw new Error(
+      "Недопустимый переход статуса. Цепочка: новый / новый от клиента → подтверждён → в работе → закрыт",
+    );
+  }
+
   if (status === "CLOSED") {
     if (!allowedPayments.includes(paymentMethodRaw as PaymentMethod)) {
       throw new Error("Укажите вид оплаты для закрытия заказ-наряда");
@@ -153,11 +173,7 @@ export async function updateWorkOrderStatus(formData: FormData) {
     });
   }
 
-  revalidatePath("/owner/work-orders");
-  revalidatePath(`/owner/work-orders/${id}`);
-  revalidatePath("/owner/cash");
-  revalidatePath("/client");
-  revalidatePath("/client/orders");
+  revalidateWorkOrder(id);
   redirect(`/owner/work-orders/${id}`);
 }
 
@@ -167,6 +183,17 @@ export async function markWorkOrderInProgress(formData: FormData) {
   const organizationId = orgIdOf(session);
   const id = str(formData, "id");
   if (!id) throw new Error("Некорректный заказ-наряд");
+
+  const current = await prisma.workOrder.findFirst({
+    where: { id, organizationId },
+    select: { status: true },
+  });
+  if (!current) throw new Error("Заказ-наряд не найден");
+  if (!canMarkWorkOrderInProgress(current.status)) {
+    throw new Error(
+      "Статус «В работе» можно поставить только для нового, нового от клиента или подтверждённого заказа",
+    );
+  }
 
   await prisma.workOrder.updateMany({
     where: { id, organizationId },
@@ -178,10 +205,59 @@ export async function markWorkOrderInProgress(formData: FormData) {
     },
   });
 
-  revalidatePath("/owner/work-orders");
-  revalidatePath(`/owner/work-orders/${id}`);
-  revalidatePath("/owner/desk");
+  revalidateWorkOrder(id);
   redirect(`/owner/work-orders/${id}`);
+}
+
+/**
+ * Админ или мойщик добавляет услугу в заказ-наряд
+ * (мойщик — по просьбе клиента; админ — при проверке/проведении).
+ */
+export async function addWorkOrderLine(formData: FormData) {
+  const session = await requireStaffSession();
+  const organizationId = orgIdOf(session);
+  const workOrderId = str(formData, "workOrderId");
+  const serviceId = str(formData, "serviceId");
+  const quantity = Math.max(1, intOr(formData, "quantity", 1));
+
+  if (!workOrderId || !serviceId) {
+    throw new Error("Выберите услугу");
+  }
+
+  const workOrder = await prisma.workOrder.findFirst({
+    where: { id: workOrderId, organizationId },
+    include: { vehicle: true },
+  });
+  if (!workOrder) throw new Error("Заказ-наряд не найден");
+  if (workOrder.status === "CLOSED") {
+    throw new Error("Нельзя добавить услугу в закрытый заказ-наряд");
+  }
+
+  const service = await prisma.service.findFirst({
+    where: { id: serviceId, organizationId, isActive: true },
+    include: { classPrices: true },
+  });
+  if (!service) throw new Error("Услуга не найдена");
+
+  const requested = intOr(formData, "durationMin", service.durationMin);
+  const durationMin = Math.max(service.durationMin, requested);
+
+  await prisma.workOrderLine.create({
+    data: {
+      workOrderId,
+      serviceId: service.id,
+      name: service.name,
+      priceRub: resolveServicePriceRub(
+        service,
+        workOrder.vehicle.vehicleClassId,
+      ),
+      durationMin,
+      quantity,
+    },
+  });
+
+  revalidateWorkOrder(workOrderId);
+  redirect(`/owner/work-orders/${workOrderId}`);
 }
 
 export async function updateWorkOrderNotes(formData: FormData) {

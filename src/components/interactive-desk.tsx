@@ -35,6 +35,8 @@ import {
   formatRub,
   workOrderStatusLabel,
 } from "@/lib/format";
+import { selectableWorkOrderStatuses } from "@/lib/work-order";
+import type { WorkOrderStatus } from "@prisma/client";
 
 type Post = { id: string; name: string };
 type CustomerOpt = { id: string; name: string; phone: string };
@@ -953,15 +955,19 @@ function DetailPanel({
                 onChange={(e) => setStatus(e.target.value)}
                 className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
               >
-                {Object.entries(
-                  block.kind === "booking"
-                    ? bookingStatusLabel
-                    : workOrderStatusLabel,
-                ).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
+                {block.kind === "booking"
+                  ? Object.entries(bookingStatusLabel).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))
+                  : selectableWorkOrderStatuses(
+                      block.status as WorkOrderStatus,
+                    ).map((value) => (
+                      <option key={value} value={value}>
+                        {workOrderStatusLabel[value]}
+                      </option>
+                    ))}
               </select>
             </label>
           </div>

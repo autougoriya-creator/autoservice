@@ -655,7 +655,8 @@ async function main() {
     status: WorkOrderStatus.IN_PROGRESS,
     postId: posts[0].id,
     scheduledAt: at(12, 0),
-    notes: "В работе — комплекс + двигатель",
+    notes:
+      "В работе — комплекс + двигатель. Мойщик/админ могут добавить услугу в карточке ЗН",
     lines: [
       { serviceId: services[1].id },
       { serviceId: services[4].id },
@@ -668,7 +669,7 @@ async function main() {
     status: WorkOrderStatus.CONFIRMED,
     postId: posts[1].id,
     scheduledAt: at(17, 0),
-    notes: "Подтверждён — вечерний экспресс",
+    notes: "Подтверждён — вечерний экспресс. При заезде: «ТС заехало → В работе»",
     lines: [{ serviceId: services[0].id }],
   });
 
@@ -678,6 +679,7 @@ async function main() {
     status: WorkOrderStatus.NEW,
     postId: posts[0].id,
     scheduledAt: at(18, 30),
+    notes: "Новый ЗН — общий вид для админа и мойщика",
     lines: [{ serviceId: services[1].id }],
   });
 
@@ -687,7 +689,7 @@ async function main() {
     status: WorkOrderStatus.NEW_FROM_CLIENT,
     postId: posts[2].id,
     scheduledAt: at(13, 0),
-    notes: "Заявка от клиента — детейлинг",
+    notes: "Заявка от клиента — детейлинг. Далее: подтвердить → в работе → закрыть",
     lines: [{ serviceId: services[5].id }],
   });
 

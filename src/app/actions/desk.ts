@@ -11,6 +11,7 @@ import {
 } from "@/lib/booking-plan";
 import { normalizePhone } from "@/lib/phone";
 import { orgIdOf, requireManagementSession } from "@/lib/tenant";
+import { canTransitionWorkOrderStatus } from "@/lib/work-order";
 
 function revalidateDesk() {
   revalidatePath("/owner/desk");
@@ -196,19 +197,35 @@ export async function updateDeskWorkOrder(input: {
       return { ok: false, error: "Некорректный статус" };
     }
 
-    const closing = input.status === "CLOSED";
+    const current = await prisma.workOrder.findFirst({
+      where: { id: input.id, organizationId },
+      select: { status: true },
+    });
+    if (!current) {
+      return { ok: false, error: "Заказ-наряд не найден" };
+    }
+    const nextStatus = input.status as
+      | "NEW"
+      | "NEW_FROM_CLIENT"
+      | "CONFIRMED"
+      | "IN_PROGRESS"
+      | "CLOSED";
+    if (!canTransitionWorkOrderStatus(current.status, nextStatus)) {
+      return {
+        ok: false,
+        error:
+          "Недопустимый переход статуса. Цепочка: новый / новый от клиента → подтверждён → в работе → закрыт",
+      };
+    }
+
+    const closing = nextStatus === "CLOSED";
     const now = closing ? new Date() : null;
     const updated = await prisma.workOrder.updateMany({
       where: { id: input.id, organizationId },
       data: {
         postId: input.postId,
         scheduledAt: startsAt,
-        status: input.status as
-          | "NEW"
-          | "NEW_FROM_CLIENT"
-          | "CONFIRMED"
-          | "IN_PROGRESS"
-          | "CLOSED",
+        status: nextStatus,
         completedAt: now,
         paidAt: now,
         // Закрытие со стола без выбора оплаты — наличные (полный расчёт в карточке ЗН)
