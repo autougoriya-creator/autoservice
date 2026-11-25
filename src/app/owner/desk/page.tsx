@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatRub } from "@/lib/format";
 import { isOwner, isStaff, orgIdOf, requireStaffSession } from "@/lib/tenant";
@@ -11,8 +10,11 @@ import {
   toDeskBlock,
 } from "@/lib/load-board";
 import { loadBoardOccupancy } from "@/lib/load-board-data";
+import { BOARD_BOOKING_STATUSES } from "@/lib/booking";
 import { SectionTitle } from "@/components/ui";
 import { InteractiveDesk } from "@/components/interactive-desk";
+import { DeskDateNav } from "@/components/desk-date-nav";
+import Link from "next/link";
 
 export default async function ManagerDeskPage({
   searchParams,
@@ -27,10 +29,7 @@ export default async function ManagerDeskPage({
   const day = parseBoardDate(dateParam);
   const dayStart = startOfLocalDay(day);
   const dayEnd = endOfLocalDay(day);
-  const prev = formatBoardDateParam(addDays(day, -1));
-  const next = formatBoardDateParam(addDays(day, 1));
-  const today = formatBoardDateParam(startOfLocalDay(new Date()));
-  const isToday = formatBoardDateParam(day) === today;
+  const dayIsoParam = formatBoardDateParam(day);
 
   const dateLabel = new Intl.DateTimeFormat("ru-RU", {
     weekday: "long",
@@ -56,18 +55,91 @@ export default async function ManagerDeskPage({
     staffPostIds = profile?.assignments.map((a) => a.postId) ?? [];
   }
 
-  const { posts, blocks, customers, services, bookingPlannedTotal } =
-    await loadBoardOccupancy(
+  const calendarFrom = startOfLocalDay(addDays(day, -45));
+  const calendarTo = endOfLocalDay(addDays(day, 45));
+  const staffPostFilter =
+    staffView && staffPostIds && staffPostIds.length > 0
+      ? { postId: { in: staffPostIds } }
+      : staffView
+        ? { postId: "__none__" }
+        : {};
+
+  const [
+    { posts, blocks, customers, services, bookingPlannedTotal },
+    busyBookings,
+    busyWorkOrders,
+  ] = await Promise.all([
+    loadBoardOccupancy(
       organizationId,
       dayStart,
       dayEnd,
       staffView ? { postIds: staffPostIds ?? [] } : undefined,
-    );
+    ),
+    prisma.booking.findMany({
+      where: {
+        organizationId,
+        startsAt: { gte: calendarFrom, lte: calendarTo },
+        ...staffPostFilter,
+      },
+      select: {
+        startsAt: true,
+        status: true,
+        workOrderId: true,
+        postId: true,
+      },
+    }),
+    prisma.workOrder.findMany({
+      where: {
+        organizationId,
+        scheduledAt: { gte: calendarFrom, lte: calendarTo },
+        ...staffPostFilter,
+      },
+      select: { scheduledAt: true, status: true, postId: true },
+    }),
+  ]);
+
+  const busyDates = new Set<string>();
+  for (const b of busyBookings) {
+    if (b.workOrderId) continue;
+    if (!BOARD_BOOKING_STATUSES.has(String(b.status))) continue;
+    busyDates.add(formatBoardDateParam(b.startsAt));
+  }
+  for (const wo of busyWorkOrders) {
+    if (!wo.scheduledAt) continue;
+    if (wo.status !== "IN_PROGRESS" && wo.status !== "CLOSED") continue;
+    busyDates.add(formatBoardDateParam(wo.scheduledAt));
+  }
 
   const occupied = blocks.length;
   const freePosts = posts.filter(
     (p) => !blocks.some((b) => b.postId === p.id),
   ).length;
+
+  const occupiedLabel = (
+    <>
+      {occupied} занято · {freePosts} пост(ов) без слотов
+      {staffView ? (
+        <>
+          <span className="mx-2">·</span>
+          <span className="font-semibold text-[var(--teal)]">только просмотр</span>
+        </>
+      ) : null}
+      {ownerFinance ? (
+        <>
+          <span className="mx-2">·</span>
+          <span className="font-semibold text-[var(--ink)]">
+            план записей {formatRub(bookingPlannedTotal)}
+          </span>
+          <Link
+            href="/owner/planned"
+            className="ml-2 text-sm font-semibold text-[var(--accent)]"
+          >
+            План выручки →
+          </Link>
+        </>
+      ) : null}
+    </>
+  );
 
   return (
     <div>
@@ -81,59 +153,12 @@ export default async function ManagerDeskPage({
         }
       />
 
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={`/owner/desk?date=${prev}`}
-            className="min-h-11 rounded-md border border-[var(--line)] bg-white/80 px-3 py-2 text-sm font-semibold text-[var(--ink)] hover:border-[var(--ink)]/30"
-          >
-            ← Вчера
-          </Link>
-          <Link
-            href={`/owner/desk?date=${today}`}
-            className={`min-h-11 rounded-md px-3 py-2 text-sm font-semibold ${
-              isToday
-                ? "bg-[var(--ink)] text-white"
-                : "border border-[var(--line)] bg-white/80 text-[var(--ink)] hover:border-[var(--ink)]/30"
-            }`}
-          >
-            Сегодня
-          </Link>
-          <Link
-            href={`/owner/desk?date=${next}`}
-            className="min-h-11 rounded-md border border-[var(--line)] bg-white/80 px-3 py-2 text-sm font-semibold text-[var(--ink)] hover:border-[var(--ink)]/30"
-          >
-            Завтра →
-          </Link>
-        </div>
-        <div className="text-sm text-[var(--ink-soft)]">
-          <span className="font-semibold capitalize text-[var(--ink)]">
-            {dateLabel}
-          </span>
-          <span className="mx-2">·</span>
-          {occupied} занято · {freePosts} пост(ов) без слотов
-          {staffView ? (
-            <>
-              <span className="mx-2">·</span>
-              <span className="font-semibold text-[var(--teal)]">только просмотр</span>
-            </>
-          ) : null}
-          {ownerFinance ? (
-            <>
-              <span className="mx-2">·</span>
-              <span className="font-semibold text-[var(--ink)]">
-                план записей {formatRub(bookingPlannedTotal)}
-              </span>
-              <Link
-                href="/owner/planned"
-                className="ml-2 text-sm font-semibold text-[var(--accent)]"
-              >
-                План выручки →
-              </Link>
-            </>
-          ) : null}
-        </div>
-      </div>
+      <DeskDateNav
+        dayIsoParam={dayIsoParam}
+        dateLabel={dateLabel}
+        occupiedLabel={occupiedLabel}
+        busyDates={[...busyDates]}
+      />
 
       {staffView && posts.length === 0 ? (
         <div className="rounded-xl border border-dashed border-[var(--line)] bg-white/70 px-6 py-10 text-center text-sm text-[var(--ink-soft)]">

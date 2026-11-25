@@ -88,7 +88,7 @@ export function LoadBoardGrid({
                     : `${rowBlocks.length} занят.`}
                 </p>
               </div>
-              <div className="relative h-28 bg-[var(--paper)]/30">
+              <div className="relative h-48 bg-[var(--paper)]/30">
                 <div
                   className="pointer-events-none absolute inset-0 grid"
                   style={{

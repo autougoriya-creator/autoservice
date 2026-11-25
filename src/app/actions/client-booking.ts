@@ -16,6 +16,14 @@ function str(formData: FormData, key: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function strAll(formData: FormData, key: string) {
+  return formData
+    .getAll(key)
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
 function overlaps(
   aStart: number,
   aEnd: number,
@@ -28,18 +36,25 @@ function overlaps(
 /**
  * Самозапись из ЛК: создаёт запись со статусом NEW_FROM_CLIENT.
  * Заказ-наряд появится, когда администратор отметит «клиент приехал».
+ * Поддерживает несколько услуг (serviceIds[]), как строки в ЗН.
  */
 export async function createClientSelfBooking(formData: FormData) {
   const session = await requireSession(["CLIENT"]);
   const organizationId = orgIdOf(session);
 
   const vehicleId = str(formData, "vehicleId");
-  const serviceId = str(formData, "serviceId");
+  const serviceIds = Array.from(
+    new Set([
+      ...strAll(formData, "serviceIds"),
+      // backward-compat: single select field
+      ...(str(formData, "serviceId") ? [str(formData, "serviceId")] : []),
+    ]),
+  );
   const startsAtIso = str(formData, "startsAtIso");
   const postId = str(formData, "postId");
 
-  if (!vehicleId || !serviceId || !startsAtIso || !postId) {
-    throw new Error("Выберите услугу, автомобиль и время");
+  if (!vehicleId || serviceIds.length === 0 || !startsAtIso || !postId) {
+    throw new Error("Выберите услуги, автомобиль и время");
   }
 
   const startsAt = new Date(startsAtIso);
@@ -62,7 +77,7 @@ export async function createClientSelfBooking(formData: FormData) {
     throw new Error("Профиль клиента не найден. Обратитесь в точку.");
   }
 
-  const [vehicle, service, post] = await Promise.all([
+  const [vehicle, services, post] = await Promise.all([
     prisma.vehicle.findFirst({
       where: {
         id: vehicleId,
@@ -70,8 +85,12 @@ export async function createClientSelfBooking(formData: FormData) {
         customerId: customer.id,
       },
     }),
-    prisma.service.findFirst({
-      where: { id: serviceId, organizationId, isActive: true },
+    prisma.service.findMany({
+      where: {
+        id: { in: serviceIds },
+        organizationId,
+        isActive: true,
+      },
       include: { classPrices: true },
     }),
     prisma.servicePost.findFirst({
@@ -80,10 +99,36 @@ export async function createClientSelfBooking(formData: FormData) {
   ]);
 
   if (!vehicle) throw new Error("Автомобиль не найден");
-  if (!service) throw new Error("Услуга не найдена");
   if (!post) throw new Error("Пост не найден");
+  if (services.length === 0) throw new Error("Услуги не найдены");
+  if (services.length !== serviceIds.length) {
+    throw new Error("Часть выбранных услуг недоступна");
+  }
 
-  const durationMin = snapDurationMin(service.durationMin);
+  // Preserve form order
+  const ordered = serviceIds
+    .map((id) => services.find((s) => s.id === id))
+    .filter((s): s is (typeof services)[number] => Boolean(s));
+
+  const lineData = ordered.map((service) => ({
+    organizationId,
+    serviceId: service.id,
+    name: service.name,
+    priceRub: resolveServicePriceRub(service, vehicle.vehicleClassId),
+    durationMin: service.durationMin,
+    quantity: 1,
+  }));
+
+  const rawDuration = lineData.reduce(
+    (sum, l) => sum + l.durationMin * l.quantity,
+    0,
+  );
+  const durationMin = snapDurationMin(rawDuration);
+  const plannedAmountRub = lineData.reduce(
+    (sum, l) => sum + l.priceRub * l.quantity,
+    0,
+  );
+  const serviceName = lineData.map((l) => l.name).join(", ");
 
   if (
     !isWithinPostHours(
@@ -156,7 +201,6 @@ export async function createClientSelfBooking(formData: FormData) {
     throw new Error("Это время уже занято. Выберите другой слот.");
   }
 
-  const priceRub = resolveServicePriceRub(service, vehicle.vehicleClassId);
   const vehicleInfo = `${vehicle.make} ${vehicle.model} · ${vehicle.plate}`;
 
   const booking = await prisma.booking.create({
@@ -165,8 +209,8 @@ export async function createClientSelfBooking(formData: FormData) {
       clientId: session.id,
       customerId: customer.id,
       postId: post.id,
-      serviceName: service.name,
-      plannedAmountRub: priceRub,
+      serviceName,
+      plannedAmountRub,
       vehicleInfo,
       vehicleId: vehicle.id,
       startsAt,
@@ -174,16 +218,7 @@ export async function createClientSelfBooking(formData: FormData) {
       status: "NEW_FROM_CLIENT",
       fromClient: true,
       lines: {
-        create: [
-          {
-            organizationId,
-            serviceId: service.id,
-            name: service.name,
-            priceRub,
-            durationMin: service.durationMin,
-            quantity: 1,
-          },
-        ],
+        create: lineData,
       },
     },
   });
