@@ -35,6 +35,11 @@ function monthMatrix(anchor: Date) {
   return cells;
 }
 
+function monthStartFromIso(dayIsoParam: string) {
+  const d = parseBoardDate(dayIsoParam);
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
 export function DeskDateNav({
   dayIsoParam,
   dateLabel,
@@ -57,17 +62,19 @@ export function DeskDateNav({
 
   const busySet = useMemo(() => new Set(busyDates), [busyDates]);
   const [open, setOpen] = useState(false);
-  const [viewMonth, setViewMonth] = useState(() => {
-    const d = parseBoardDate(dayIsoParam);
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  });
+  const selectedMonth = useMemo(
+    () => monthStartFromIso(dayIsoParam),
+    [dayIsoParam],
+  );
+  // Локальный курсор месяца; синхронизируем при смене дня без useEffect —
+  // иначе новый Date() в deps/setState крутит Maximum update depth.
+  const [viewMonth, setViewMonth] = useState(selectedMonth);
+  const [syncedDayIso, setSyncedDayIso] = useState(dayIsoParam);
+  if (dayIsoParam !== syncedDayIso) {
+    setSyncedDayIso(dayIsoParam);
+    setViewMonth(selectedMonth);
+  }
   const rootRef = useRef<HTMLDivElement>(null);
-
-  // Только dayIsoParam — иначе новый Date() каждый рендер крутит setState в цикле.
-  useEffect(() => {
-    const d = parseBoardDate(dayIsoParam);
-    setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
-  }, [dayIsoParam]);
 
   useEffect(() => {
     if (!open) return;

@@ -95,10 +95,10 @@ export default async function MyWorkPage({
 
       <Toolbar>
         <div className="flex flex-wrap gap-2">
-          {openAssignments.length === 0 ? (
-            <StatusPill>
-              {isAdminRole ? "Администратор (без поста)" : "Пост не закреплён"}
-            </StatusPill>
+          {isAdminRole ? (
+            <StatusPill>Администратор (без поста)</StatusPill>
+          ) : openAssignments.length === 0 ? (
+            <StatusPill>Пост не закреплён</StatusPill>
           ) : (
             openAssignments.map((a) => (
               <StatusPill key={a.id} tone="ok">
@@ -119,17 +119,19 @@ export default async function MyWorkPage({
 
       <div
         className={`grid gap-4 sm:grid-cols-2 ${
-          isAdminRole ? "lg:grid-cols-3" : ""
+          isAdminRole ? "lg:grid-cols-2" : ""
         }`}
       >
-        <div className="rounded-xl border border-[var(--line)] bg-white/85 p-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
-            Выручка на моих постах
-          </p>
-          <p className="brand-mark mt-3 text-3xl text-[var(--ink)]">
-            {formatRub(revenue)}
-          </p>
-        </div>
+        {isAdminRole ? null : (
+          <div className="rounded-xl border border-[var(--line)] bg-white/85 p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+              Выручка на моих постах
+            </p>
+            <p className="brand-mark mt-3 text-3xl text-[var(--ink)]">
+              {formatRub(revenue)}
+            </p>
+          </div>
+        )}
         <div className="rounded-xl border border-[var(--line)] bg-white/85 p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
             Оценка начисления
@@ -138,9 +140,11 @@ export default async function MyWorkPage({
             {formatRub(estimate)}
           </p>
           <p className="mt-2 text-xs text-[var(--ink-soft)]">
-            {profile.payMode === "SALARY"
-              ? "Доля оклада по дням смен в периоде"
-              : `${profile.dealPercent}% от вашей доли выручки на постах`}
+            {isAdminRole
+              ? "Оклад по сменам"
+              : profile.payMode === "SALARY"
+                ? "Доля оклада по дням смен в периоде"
+                : `${profile.dealPercent}% от вашей доли выручки на постах`}
             {isAdminRole && upsellBonus > 0
               ? ` + бонус допродаж ${formatRub(upsellBonus)}`
               : ""}
@@ -155,9 +159,9 @@ export default async function MyWorkPage({
               {formatRub(upsellBonus)}
             </p>
             <p className="mt-2 text-xs text-[var(--ink-soft)]">
-              {upsellBonusPercent}% от доп. услуг после самозаписи
+              {upsellBonusPercent}% от доп. услуг в закрытых ЗН за смену
               {baseEstimate > 0
-                ? ` · оклад/база ${formatRub(baseEstimate)}`
+                ? ` · оклад ${formatRub(baseEstimate)}`
                 : ""}
             </p>
           </div>
@@ -167,12 +171,12 @@ export default async function MyWorkPage({
       {isAdminRole ? (
         <section>
           <h2 className="brand-mark mb-4 text-xl text-[var(--ink)]">
-            Допродажи периода
+            Допродажи за смену
           </h2>
           {upsellRows.length === 0 ? (
             <p className="rounded-xl border border-dashed border-[var(--line)] bg-white/60 px-5 py-8 text-sm text-[var(--ink-soft)]">
-              Пока нет закрытых ЗН с допродажами после самозаписи на одну
-              услугу.
+              Нет закрытых ЗН с допродажами в окнах ваших смен (самозапись на
+              одну услугу → доп. услуги в ЗН).
             </p>
           ) : (
             <DataTable
@@ -213,14 +217,22 @@ export default async function MyWorkPage({
             Смен в выбранном периоде нет
           </p>
         ) : (
-          <DataTable headers={["Начало", "Конец", "Пост", "Заметка"]}>
+          <DataTable
+            headers={
+              isAdminRole
+                ? ["Начало", "Конец", "Заметка"]
+                : ["Начало", "Конец", "Пост", "Заметка"]
+            }
+          >
             {periodShifts.map((s) => (
               <tr key={s.id}>
                 <td className="px-4 py-3">{formatDateTime(s.startsAt)}</td>
                 <td className="px-4 py-3">{formatDateTime(s.endsAt)}</td>
-                <td className="px-4 py-3 text-[var(--ink-soft)]">
-                  {s.post?.name ?? "—"}
-                </td>
+                {isAdminRole ? null : (
+                  <td className="px-4 py-3 text-[var(--ink-soft)]">
+                    {s.post?.name ?? "—"}
+                  </td>
+                )}
                 <td className="px-4 py-3 text-[var(--ink-soft)]">
                   {s.note ?? "—"}
                 </td>
@@ -230,43 +242,47 @@ export default async function MyWorkPage({
         )}
       </section>
 
-      <section>
-        <h2 className="brand-mark mb-4 text-xl text-[var(--ink)]">
-          Заказ-наряды постов
-        </h2>
-        {periodWOs.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-[var(--line)] bg-white/60 px-5 py-8 text-sm text-[var(--ink-soft)]">
-            Заказ-нарядов за период нет
-          </p>
-        ) : (
-          <DataTable headers={["Документ", "Пост", "Сумма", "Статус", "Когда"]}>
-            {periodWOs.map((wo) => (
-              <tr key={wo.id}>
-                <td className="px-4 py-3 font-medium">
-                  <Link
-                    href={`/owner/work-orders/${wo.id}`}
-                    className="hover:text-[var(--accent)]"
-                  >
-                    {workOrderNumberLabel(wo.number)}
-                  </Link>
-                </td>
-                <td className="px-4 py-3 text-[var(--ink-soft)]">
-                  {wo.postName}
-                </td>
-                <td className="px-4 py-3">{formatRub(wo.total)}</td>
-                <td className="px-4 py-3">
-                  <StatusPill>
-                    {workOrderStatusLabel[wo.status] ?? wo.status}
-                  </StatusPill>
-                </td>
-                <td className="px-4 py-3 text-[var(--ink-soft)]">
-                  {formatDateTime(wo.when)}
-                </td>
-              </tr>
-            ))}
-          </DataTable>
-        )}
-      </section>
+      {isAdminRole ? null : (
+        <section>
+          <h2 className="brand-mark mb-4 text-xl text-[var(--ink)]">
+            Заказ-наряды постов
+          </h2>
+          {periodWOs.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-[var(--line)] bg-white/60 px-5 py-8 text-sm text-[var(--ink-soft)]">
+              Заказ-нарядов за период нет
+            </p>
+          ) : (
+            <DataTable
+              headers={["Документ", "Пост", "Сумма", "Статус", "Когда"]}
+            >
+              {periodWOs.map((wo) => (
+                <tr key={wo.id}>
+                  <td className="px-4 py-3 font-medium">
+                    <Link
+                      href={`/owner/work-orders/${wo.id}`}
+                      className="hover:text-[var(--accent)]"
+                    >
+                      {workOrderNumberLabel(wo.number)}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-[var(--ink-soft)]">
+                    {wo.postName}
+                  </td>
+                  <td className="px-4 py-3">{formatRub(wo.total)}</td>
+                  <td className="px-4 py-3">
+                    <StatusPill>
+                      {workOrderStatusLabel[wo.status] ?? wo.status}
+                    </StatusPill>
+                  </td>
+                  <td className="px-4 py-3 text-[var(--ink-soft)]">
+                    {formatDateTime(wo.when)}
+                  </td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+        </section>
+      )}
     </div>
   );
 }

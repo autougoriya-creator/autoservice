@@ -24,7 +24,7 @@ export default async function PnLPage({
       <SectionTitle
         eyebrow="Экономика"
         title="Выручка и ФОТ по постам"
-        description="Сводка: выручка заказ-нарядов на посту минус расчётный ФОТ персонала и бонус админу за допродажи."
+        description="Сводка: выручка ЗН по постам минус ФОТ исполнителей и бонус админу за допродажи из закрытых ЗН (админ без поста)."
       />
 
       <Toolbar>
@@ -97,12 +97,13 @@ export default async function PnLPage({
 
       <section className="space-y-4">
         <h2 className="brand-mark text-xl text-[var(--ink)]">
-          Допродажи после самозаписи → бонус админу
+          Допродажи за смену админа → бонус
         </h2>
         <p className="text-sm text-[var(--ink-soft)]">
           База допродаж: {formatRub(data.totals.adminUpsellAmount)} · ставка{" "}
           {data.totals.adminUpsellPercent}% · начисление{" "}
-          {formatRub(data.totals.adminUpsellBonus)}. Процент меняется в{" "}
+          {formatRub(data.totals.adminUpsellBonus)} (закрытые ЗН в окна смен
+          админа, без поста). Процент — в{" "}
           <Link href="/owner/staff" className="font-semibold text-[var(--accent)]">
             Персонале
           </Link>
@@ -110,8 +111,8 @@ export default async function PnLPage({
         </p>
         {data.adminUpsell.rows.length === 0 ? (
           <p className="rounded-xl border border-dashed border-[var(--line)] bg-white/60 px-5 py-8 text-sm text-[var(--ink-soft)]">
-            За период нет закрытых ЗН с допродажами после самозаписи на одну
-            услугу.
+            В сменах админа за период нет закрытых ЗН с допродажами после
+            самозаписи на одну услугу.
           </p>
         ) : (
           <DataTable

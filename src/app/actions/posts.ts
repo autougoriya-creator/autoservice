@@ -95,6 +95,14 @@ export async function assignPerformerToPost(formData: FormData) {
   ]);
   if (!post || !profile) throw new Error("Пост или профиль не найдены");
 
+  const membership = await prisma.membership.findFirst({
+    where: { organizationId, userId: profile.userId },
+    select: { role: true },
+  });
+  if (membership?.role === "ADMIN") {
+    throw new Error("Администратор не закрепляется за постом");
+  }
+
   await prisma.postAssignment.updateMany({
     where: {
       organizationId,

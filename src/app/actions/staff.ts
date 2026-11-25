@@ -109,6 +109,14 @@ export async function assignStaffToPost(formData: FormData) {
   ]);
   if (!post || !profile) throw new Error("Пост или профиль не найдены");
 
+  const membership = await prisma.membership.findFirst({
+    where: { organizationId, userId: profile.userId },
+    select: { role: true },
+  });
+  if (membership?.role === "ADMIN") {
+    throw new Error("Администратор не закрепляется за постом");
+  }
+
   // Close previous open assignment for this post+staff
   await prisma.postAssignment.updateMany({
     where: {
@@ -200,11 +208,18 @@ export async function createStaffShift(formData: FormData) {
   });
   if (!profile) throw new Error("Профиль не найден");
 
+  const membership = await prisma.membership.findFirst({
+    where: { organizationId, userId: profile.userId },
+    select: { role: true },
+  });
+  // Админ работает сменой без поста (бонус — от закрытых ЗН за смену).
+  const resolvedPostId = membership?.role === "ADMIN" ? null : postId;
+
   await prisma.staffShift.create({
     data: {
       organizationId,
       staffProfileId,
-      postId,
+      postId: resolvedPostId,
       startsAt,
       endsAt,
       note,

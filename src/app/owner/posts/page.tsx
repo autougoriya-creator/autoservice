@@ -33,7 +33,7 @@ export default async function PostsBoardPage() {
     staffPostIds = profile?.assignments.map((a) => a.postId) ?? [];
   }
 
-  const [posts, profiles] = await Promise.all([
+  const [posts, profiles, adminMemberships] = await Promise.all([
     prisma.servicePost.findMany({
       where: {
         organizationId: orgId,
@@ -67,7 +67,13 @@ export default async function PostsBoardPage() {
       include: { user: true },
       orderBy: { createdAt: "asc" },
     }),
+    prisma.membership.findMany({
+      where: { organizationId: orgId, role: "ADMIN" },
+      select: { userId: true },
+    }),
   ]);
+  const adminUserIds = new Set(adminMemberships.map((m) => m.userId));
+  const floorProfiles = profiles.filter((p) => !adminUserIds.has(p.userId));
 
   return (
     <div>
@@ -245,7 +251,7 @@ export default async function PostsBoardPage() {
                         required
                       >
                         <option value="">Выберите…</option>
-                        {profiles.map((p) => (
+                        {floorProfiles.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.user.name} · {p.title}
                           </option>
