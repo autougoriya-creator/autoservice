@@ -13,7 +13,13 @@ import {
 import { formatRub } from "@/lib/format";
 import { resolveServicePriceRub } from "@/lib/pricing";
 import { formatDuration } from "@/lib/work-order";
-import { buildClientSlots, type BusyInterval } from "@/lib/client-slots";
+import {
+  bookingDayKeys,
+  buildDaySlots,
+  localDayKey,
+  parseLocalDayKey,
+  type BusyInterval,
+} from "@/lib/client-slots";
 
 type VehicleOption = {
   id: string;
@@ -45,6 +51,32 @@ type BusyPayload = {
   postId: string;
 };
 
+const WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+
+function formatDayHeading(dayKey: string) {
+  const d = parseLocalDayKey(dayKey);
+  if (!d) return dayKey;
+  return new Intl.DateTimeFormat("ru-RU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(d);
+}
+
+function calendarCells(dayKeys: string[]) {
+  if (dayKeys.length === 0) return [];
+  const first = parseLocalDayKey(dayKeys[0]);
+  if (!first) return dayKeys.map((key) => ({ key, inHorizon: true }));
+
+  // Monday-first padding
+  const weekday = (first.getDay() + 6) % 7;
+  const cells: { key: string | null; inHorizon: boolean }[] = [];
+  for (let i = 0; i < weekday; i++) cells.push({ key: null, inHorizon: false });
+  for (const key of dayKeys) cells.push({ key, inHorizon: true });
+  while (cells.length % 7 !== 0) cells.push({ key: null, inHorizon: false });
+  return cells;
+}
+
 export function ClientBookingForm({
   vehicles,
   services,
@@ -58,8 +90,12 @@ export function ClientBookingForm({
   busy: BusyPayload[];
   phone: string;
 }) {
+  const dayKeys = useMemo(() => bookingDayKeys(new Date(), 14), []);
+  const todayKey = localDayKey(new Date());
+
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? "");
   const [serviceId, setServiceId] = useState(services[0]?.id ?? "");
+  const [dayKey, setDayKey] = useState(dayKeys[0] ?? todayKey);
   const [slotKey, setSlotKey] = useState("");
 
   const busyIntervals: BusyInterval[] = useMemo(
@@ -82,19 +118,37 @@ export function ClientBookingForm({
       )
     : 0;
 
-  const slots = useMemo(
+  const daySlots = useMemo(
     () =>
-      buildClientSlots({
+      buildDaySlots({
+        dayKey,
         posts,
         busy: busyIntervals,
         durationMin,
       }),
-    [posts, busyIntervals, durationMin],
+    [dayKey, posts, busyIntervals, durationMin],
   );
 
-  const effectiveSlot =
-    slots.find((s) => `${s.startsAtIso}|${s.postId}` === slotKey) ?? slots[0];
+  const freeByDay = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const key of dayKeys) {
+      const free = buildDaySlots({
+        dayKey: key,
+        posts,
+        busy: busyIntervals,
+        durationMin,
+      }).filter((s) => s.available).length;
+      map.set(key, free);
+    }
+    return map;
+  }, [dayKeys, posts, busyIntervals, durationMin]);
 
+  const availableSlots = daySlots.filter((s) => s.available && s.postId);
+  const selectedSlot =
+    availableSlots.find((s) => `${s.startsAtIso}|${s.postId}` === slotKey) ??
+    null;
+
+  const cells = useMemo(() => calendarCells(dayKeys), [dayKeys]);
   const showVehicleSelect = vehicles.length > 1;
 
   if (vehicles.length === 0) {
@@ -182,47 +236,117 @@ export function ClientBookingForm({
           </TextSelect>
         </Field>
 
-        <Field
-          label="Время"
-          htmlFor="slotKey"
-          hint="Свободные слоты на 7 дней, шаг 15 мин (08:00–20:00)"
-        >
-          {slots.length === 0 ? (
+        <div>
+          <p className="mb-1.5 text-sm font-semibold text-[var(--ink)]">Дата</p>
+          <p className="mb-3 text-xs text-[var(--ink-soft)]">
+            Выберите день, затем свободное время. Занятые слоты серые.
+          </p>
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--paper)]/50 p-3">
+            <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-soft)]">
+              {WEEKDAYS.map((d) => (
+                <span key={d}>{d}</span>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {cells.map((cell, idx) => {
+                if (!cell.key) {
+                  return <span key={`pad-${idx}`} className="min-h-11" />;
+                }
+                const d = parseLocalDayKey(cell.key);
+                const dayNum = d?.getDate() ?? "";
+                const selected = cell.key === dayKey;
+                const isToday = cell.key === todayKey;
+                const freeCount = freeByDay.get(cell.key) ?? 0;
+                return (
+                  <button
+                    key={cell.key}
+                    type="button"
+                    onClick={() => {
+                      setDayKey(cell.key!);
+                      setSlotKey("");
+                    }}
+                    className={[
+                      "min-h-11 rounded-lg border text-sm font-semibold transition",
+                      selected
+                        ? "border-[var(--ink)] bg-[var(--ink)] text-white shadow-sm"
+                        : freeCount === 0
+                          ? "border-transparent bg-white/50 text-[var(--ink-soft)]/70 hover:bg-white/80"
+                          : "border-transparent bg-white/90 text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent-deep)]",
+                      isToday && !selected
+                        ? "ring-1 ring-[var(--accent)]/50"
+                        : "",
+                    ].join(" ")}
+                    aria-pressed={selected}
+                    aria-label={formatDayHeading(cell.key)}
+                  >
+                    {dayNum}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <p className="mt-2 text-sm capitalize text-[var(--ink-soft)]">
+            {formatDayHeading(dayKey)}
+          </p>
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-sm font-semibold text-[var(--ink)]">Время</p>
+          {daySlots.length === 0 ? (
             <p className="rounded-md border border-[var(--line)] bg-[var(--paper)]/60 px-3 py-3 text-sm text-[var(--ink-soft)]">
-              На ближайшие дни свободных слотов нет. Попробуйте позже или
-              позвоните в точку.
+              На этот день слотов нет.
             </p>
           ) : (
-            <TextSelect
-              id="slotKey"
-              required
-              value={
-                effectiveSlot
-                  ? `${effectiveSlot.startsAtIso}|${effectiveSlot.postId}`
-                  : ""
-              }
-              onChange={(e) => setSlotKey(e.target.value)}
-            >
-              {slots.map((s) => (
-                <option
-                  key={`${s.startsAtIso}|${s.postId}`}
-                  value={`${s.startsAtIso}|${s.postId}`}
-                >
-                  {s.label}
-                </option>
-              ))}
-            </TextSelect>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {daySlots.map((slot) => {
+                const key =
+                  slot.postId != null
+                    ? `${slot.startsAtIso}|${slot.postId}`
+                    : `busy-${slot.startsAtIso}`;
+                const selected =
+                  selectedSlot != null &&
+                  `${selectedSlot.startsAtIso}|${selectedSlot.postId}` === key;
+                if (!slot.available || !slot.postId) {
+                  return (
+                    <span
+                      key={key}
+                      className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--paper-deep)]/70 px-2 text-sm font-medium text-[var(--ink-soft)]/55 line-through"
+                      title="Занято"
+                      aria-disabled="true"
+                    >
+                      {slot.timeLabel}
+                    </span>
+                  );
+                }
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSlotKey(key)}
+                    className={[
+                      "inline-flex min-h-11 items-center justify-center rounded-lg border px-2 text-sm font-semibold transition",
+                      selected
+                        ? "border-[var(--accent)] bg-[var(--accent)] text-white shadow-[0_8px_18px_rgba(196,92,38,0.25)]"
+                        : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent-deep)]",
+                    ].join(" ")}
+                    aria-pressed={selected}
+                  >
+                    {slot.timeLabel}
+                  </button>
+                );
+              })}
+            </div>
           )}
-        </Field>
+        </div>
 
-        {effectiveSlot ? (
+        {selectedSlot && selectedSlot.postId ? (
           <>
             <input
               type="hidden"
               name="startsAtIso"
-              value={effectiveSlot.startsAtIso}
+              value={selectedSlot.startsAtIso}
             />
-            <input type="hidden" name="postId" value={effectiveSlot.postId} />
+            <input type="hidden" name="postId" value={selectedSlot.postId} />
           </>
         ) : null}
 
@@ -245,17 +369,22 @@ export function ClientBookingForm({
                 {formatDuration(selectedService.durationMin)}
               </span>
             </p>
+            {selectedSlot ? (
+              <p className="mt-2 text-sm text-white/75">
+                {formatDayHeading(dayKey)} · {selectedSlot.timeLabel}
+              </p>
+            ) : null}
           </div>
         ) : null}
 
         <FormActions>
-          {effectiveSlot ? (
+          {selectedSlot ? (
             <SubmitButton className="sm:w-auto" variant="primary">
               Записаться
             </SubmitButton>
           ) : (
             <p className="text-sm text-[var(--ink-soft)]">
-              Выберите свободный слот, чтобы отправить заявку.
+              Выберите дату и свободное время, чтобы отправить заявку.
             </p>
           )}
         </FormActions>

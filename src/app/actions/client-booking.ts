@@ -8,10 +8,21 @@ import { prisma } from "@/lib/prisma";
 import { BOARD_SNAP_MIN } from "@/lib/load-board";
 import { isWithinPostHours } from "@/lib/payroll";
 import { resolveServicePriceRub } from "@/lib/pricing";
+import { snapDurationMin } from "@/lib/client-slots";
+import { BOARD_BOOKING_STATUSES } from "@/lib/booking";
 
 function str(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
+}
+
+function overlaps(
+  aStart: number,
+  aEnd: number,
+  bStart: number,
+  bEnd: number,
+) {
+  return aStart < bEnd && bStart < aEnd;
 }
 
 /**
@@ -27,7 +38,7 @@ export async function createClientSelfBooking(formData: FormData) {
   const startsAtIso = str(formData, "startsAtIso");
   const postId = str(formData, "postId");
 
-  if (!vehicleId || !serviceId || !startsAtIso) {
+  if (!vehicleId || !serviceId || !startsAtIso || !postId) {
     throw new Error("Выберите услугу, автомобиль и время");
   }
 
@@ -63,24 +74,21 @@ export async function createClientSelfBooking(formData: FormData) {
       where: { id: serviceId, organizationId, isActive: true },
       include: { classPrices: true },
     }),
-    postId
-      ? prisma.servicePost.findFirst({
-          where: { id: postId, organizationId, isActive: true },
-        })
-      : prisma.servicePost.findFirst({
-          where: { organizationId, isActive: true },
-          orderBy: { sortOrder: "asc" },
-        }),
+    prisma.servicePost.findFirst({
+      where: { id: postId, organizationId, isActive: true },
+    }),
   ]);
 
   if (!vehicle) throw new Error("Автомобиль не найден");
   if (!service) throw new Error("Услуга не найдена");
-  if (!post) throw new Error("Нет свободных постов");
+  if (!post) throw new Error("Пост не найден");
+
+  const durationMin = snapDurationMin(service.durationMin);
 
   if (
     !isWithinPostHours(
       startsAt,
-      service.durationMin,
+      durationMin,
       post.workStartHour,
       post.workEndHour,
     )
@@ -89,6 +97,63 @@ export async function createClientSelfBooking(formData: FormData) {
     throw new Error(
       `Запись на «${post.name}» доступна с ${pad(post.workStartHour)}:00 до ${pad(post.workEndHour)}:00`,
     );
+  }
+
+  const slotEnd = startsAt.getTime() + durationMin * 60_000;
+  const windowStart = new Date(startsAt.getTime() - 8 * 60 * 60_000);
+  const windowEnd = new Date(slotEnd + 8 * 60 * 60_000);
+
+  const [existingBookings, openWorkOrders] = await Promise.all([
+    prisma.booking.findMany({
+      where: {
+        organizationId,
+        postId: post.id,
+        startsAt: { gte: windowStart, lte: windowEnd },
+      },
+      select: {
+        startsAt: true,
+        durationMin: true,
+        status: true,
+        workOrderId: true,
+      },
+    }),
+    prisma.workOrder.findMany({
+      where: {
+        organizationId,
+        postId: post.id,
+        status: "IN_PROGRESS",
+        scheduledAt: { gte: windowStart, lte: windowEnd },
+      },
+      select: { scheduledAt: true, lines: { select: { durationMin: true, quantity: true } } },
+    }),
+  ]);
+
+  const conflictBooking = existingBookings.some((b) => {
+    if (b.workOrderId) return false;
+    if (!BOARD_BOOKING_STATUSES.has(String(b.status))) return false;
+    const bEnd = b.startsAt.getTime() + b.durationMin * 60_000;
+    return overlaps(startsAt.getTime(), slotEnd, b.startsAt.getTime(), bEnd);
+  });
+  if (conflictBooking) {
+    throw new Error("Это время уже занято. Выберите другой слот.");
+  }
+
+  const conflictWo = openWorkOrders.some((wo) => {
+    if (!wo.scheduledAt) return false;
+    const dur = Math.max(
+      15,
+      wo.lines.reduce((s, l) => s + l.durationMin * l.quantity, 0),
+    );
+    const woEnd = wo.scheduledAt.getTime() + dur * 60_000;
+    return overlaps(
+      startsAt.getTime(),
+      slotEnd,
+      wo.scheduledAt.getTime(),
+      woEnd,
+    );
+  });
+  if (conflictWo) {
+    throw new Error("Это время уже занято. Выберите другой слот.");
   }
 
   const priceRub = resolveServicePriceRub(service, vehicle.vehicleClassId);
@@ -105,7 +170,7 @@ export async function createClientSelfBooking(formData: FormData) {
       vehicleInfo,
       vehicleId: vehicle.id,
       startsAt,
-      durationMin: service.durationMin,
+      durationMin,
       status: "NEW_FROM_CLIENT",
       fromClient: true,
       lines: {
@@ -125,6 +190,7 @@ export async function createClientSelfBooking(formData: FormData) {
 
   revalidatePath("/client");
   revalidatePath("/client/book");
+  revalidatePath("/client/orders");
   revalidatePath("/owner/bookings");
   revalidatePath("/owner/desk");
   revalidatePath("/owner/planned");
