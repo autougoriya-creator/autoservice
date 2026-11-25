@@ -3,13 +3,7 @@ import { BOARD_BOOKING_STATUSES } from "@/lib/booking";
 import { workOrderDuration, workOrderNumberLabel } from "@/lib/work-order";
 import { prisma } from "@/lib/prisma";
 
-const WORK_ORDER_STATUSES = new Set([
-  "NEW",
-  "NEW_FROM_CLIENT",
-  "CONFIRMED",
-  "IN_PROGRESS",
-  "CLOSED",
-]);
+const WORK_ORDER_STATUSES = new Set(["IN_PROGRESS", "CLOSED"]);
 
 function inDay(date: Date | null | undefined, dayStart: Date, dayEnd: Date) {
   if (!date) return false;

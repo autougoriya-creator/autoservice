@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  markWorkOrderInProgress,
   updateWorkOrderNotes,
   updateWorkOrderStatus,
 } from "@/app/actions/work-orders";
@@ -16,7 +15,6 @@ import {
 } from "@/lib/format";
 import { vehicleClassLabel } from "@/lib/pricing";
 import {
-  canMarkWorkOrderInProgress,
   formatDuration,
   selectableWorkOrderStatuses,
   workOrderDuration,
@@ -62,7 +60,6 @@ export default async function WorkOrderDetailPage({
 
   const total = workOrderTotal(workOrder.lines);
   const duration = workOrderDuration(workOrder.lines);
-  const canArrive = canMarkWorkOrderInProgress(workOrder.status);
   const canAddLine = workOrder.status !== "CLOSED";
   const statusOptions = selectableWorkOrderStatuses(workOrder.status);
   const roleLabel =
@@ -174,18 +171,6 @@ export default async function WorkOrderDetailPage({
         />
       ) : null}
 
-      {canArrive ? (
-        <FormCard>
-          <form action={markWorkOrderInProgress} className="flex flex-wrap items-center gap-3">
-            <input type="hidden" name="id" value={workOrder.id} />
-            <p className="text-sm text-[var(--ink-soft)]">
-              При заезде ТС администратор или мойщик ставит статус «В работе».
-            </p>
-            <SubmitButton>ТС заехало → В работе</SubmitButton>
-          </form>
-        </FormCard>
-      ) : null}
-
       <div className="grid gap-4 md:grid-cols-2">
         <FormCard>
           <form action={updateWorkOrderStatus} className="space-y-4">
@@ -193,7 +178,7 @@ export default async function WorkOrderDetailPage({
             <Field
               label="Статус"
               htmlFor="status"
-              hint="Цепочка: новый / новый от клиента → подтверждён → в работе → закрыт"
+              hint="Заказ-наряд: в работе → закрыт (статусы записи живут отдельно)"
             >
               <TextSelect
                 id="status"

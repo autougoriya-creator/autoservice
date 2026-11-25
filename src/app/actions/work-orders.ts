@@ -9,7 +9,6 @@ import { orgIdOf, requireStaffSession } from "@/lib/tenant";
 import { applyNormWriteoff } from "@/lib/warehouse";
 import {
   WORK_ORDER_STATUSES,
-  canMarkWorkOrderInProgress,
   canTransitionWorkOrderStatus,
 } from "@/lib/work-order";
 
@@ -83,7 +82,7 @@ export async function createWorkOrder(formData: FormData) {
     data: {
       organizationId,
       number: updated.workOrderSeq,
-      status: "NEW",
+      status: "IN_PROGRESS",
       customerId,
       vehicleId,
       notes,
@@ -133,7 +132,7 @@ export async function updateWorkOrderStatus(formData: FormData) {
   if (!current) throw new Error("Заказ-наряд не найден");
   if (!canTransitionWorkOrderStatus(current.status, status)) {
     throw new Error(
-      "Недопустимый переход статуса. Цепочка: новый / новый от клиента → подтверждён → в работе → закрыт",
+      "Недопустимый переход статуса. Цепочка заказ-наряда: в работе → закрыт",
     );
   }
 
@@ -172,38 +171,6 @@ export async function updateWorkOrderStatus(formData: FormData) {
       },
     });
   }
-
-  revalidateWorkOrder(id);
-  redirect(`/owner/work-orders/${id}`);
-}
-
-/** Админ / мойщик: ТС заехало → в работе */
-export async function markWorkOrderInProgress(formData: FormData) {
-  const session = await requireStaffSession();
-  const organizationId = orgIdOf(session);
-  const id = str(formData, "id");
-  if (!id) throw new Error("Некорректный заказ-наряд");
-
-  const current = await prisma.workOrder.findFirst({
-    where: { id, organizationId },
-    select: { status: true },
-  });
-  if (!current) throw new Error("Заказ-наряд не найден");
-  if (!canMarkWorkOrderInProgress(current.status)) {
-    throw new Error(
-      "Статус «В работе» можно поставить только для нового, нового от клиента или подтверждённого заказа",
-    );
-  }
-
-  await prisma.workOrder.updateMany({
-    where: { id, organizationId },
-    data: {
-      status: "IN_PROGRESS",
-      completedAt: null,
-      paidAt: null,
-      paymentMethod: null,
-    },
-  });
 
   revalidateWorkOrder(id);
   redirect(`/owner/work-orders/${id}`);

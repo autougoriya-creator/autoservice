@@ -10,7 +10,7 @@ import {
 } from "@/lib/payroll";
 import { workOrderTotal } from "@/lib/work-order";
 
-const ACTIVE_WO = new Set(["CONFIRMED", "IN_PROGRESS", "CLOSED"]);
+const ACTIVE_WO = new Set(["IN_PROGRESS", "CLOSED"]);
 
 export async function buildPostPnL(
   organizationId: string,

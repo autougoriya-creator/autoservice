@@ -25,10 +25,8 @@ enum BookingStatus {
   CANCELLED
 }
 
+/// Статусы заказ-наряда. Создаётся «в работе» (в т.ч. из записи); закрытие — финал.
 enum WorkOrderStatus {
-  NEW
-  NEW_FROM_CLIENT
-  CONFIRMED
   IN_PROGRESS
   CLOSED
 }
@@ -445,7 +443,7 @@ model WorkOrder {
   id             String          @id @default(cuid())
   organizationId String
   number         Int
-  status         WorkOrderStatus @default(NEW)
+  status         WorkOrderStatus @default(IN_PROGRESS)
   customerId     String
   vehicleId      String
   postId         String?

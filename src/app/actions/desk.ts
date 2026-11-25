@@ -437,13 +437,7 @@ export async function updateDeskWorkOrder(input: {
     if (Number.isNaN(startsAt.getTime())) {
       return { ok: false, error: "Некорректное время" };
     }
-    const allowed = [
-      "NEW",
-      "NEW_FROM_CLIENT",
-      "CONFIRMED",
-      "IN_PROGRESS",
-      "CLOSED",
-    ];
+    const allowed = ["IN_PROGRESS", "CLOSED"];
     if (!allowed.includes(input.status)) {
       return { ok: false, error: "Некорректный статус" };
     }
@@ -461,17 +455,12 @@ export async function updateDeskWorkOrder(input: {
     if (!post) return { ok: false, error: "Пост не найден" };
     const hoursErr = postHoursError(startsAt, 60, post);
     if (hoursErr) return { ok: false, error: hoursErr };
-    const nextStatus = input.status as
-      | "NEW"
-      | "NEW_FROM_CLIENT"
-      | "CONFIRMED"
-      | "IN_PROGRESS"
-      | "CLOSED";
+    const nextStatus = input.status as "IN_PROGRESS" | "CLOSED";
     if (!canTransitionWorkOrderStatus(current.status, nextStatus)) {
       return {
         ok: false,
         error:
-          "Недопустимый переход статуса. Цепочка: новый / новый от клиента → подтверждён → в работе → закрыт",
+          "Недопустимый переход статуса. Цепочка заказ-наряда: в работе → закрыт",
       };
     }
 
