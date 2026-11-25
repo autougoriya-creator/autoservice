@@ -100,16 +100,8 @@ export default async function NewVehiclePage({
                 className="uppercase"
               />
             </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Год" htmlFor="year">
-                <TextInput id="year" name="year" inputMode="numeric" placeholder="2021" />
-              </Field>
-              <Field label="Цвет" htmlFor="color">
-                <TextInput id="color" name="color" placeholder="Чёрный" />
-              </Field>
-            </div>
-            <Field label="VIN" htmlFor="vin">
-              <TextInput id="vin" name="vin" placeholder="Необязательно" />
+            <Field label="Цвет" htmlFor="color">
+              <TextInput id="color" name="color" placeholder="Чёрный" />
             </Field>
             <FormActions>
               <Link

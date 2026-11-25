@@ -588,6 +588,9 @@ async function main() {
     completedAt?: Date;
     paidAt?: Date;
     paymentMethod?: PaymentMethod;
+    /** Для CASH_AND_TERMINAL — доля налом; иначе выводится из вида оплаты */
+    cashPaidRub?: number;
+    terminalPaidRub?: number;
     postId?: string;
     scheduledAt?: Date;
     lines: { serviceId: string; quantity?: number }[];
@@ -611,6 +614,27 @@ async function main() {
         quantity: line.quantity ?? 1,
       };
     });
+    const totalRub = lineData.reduce(
+      (sum, line) => sum + line.priceRub * line.quantity,
+      0,
+    );
+
+    let cashPaidRub: number | null = opts.cashPaidRub ?? null;
+    let terminalPaidRub: number | null = opts.terminalPaidRub ?? null;
+    if (opts.paymentMethod === PaymentMethod.CASH) {
+      cashPaidRub = totalRub;
+      terminalPaidRub = null;
+    } else if (opts.paymentMethod === PaymentMethod.TERMINAL) {
+      cashPaidRub = null;
+      terminalPaidRub = totalRub;
+    } else if (
+      opts.paymentMethod === PaymentMethod.CASH_AND_TERMINAL &&
+      cashPaidRub == null &&
+      terminalPaidRub == null
+    ) {
+      cashPaidRub = Math.floor(totalRub / 2);
+      terminalPaidRub = totalRub - cashPaidRub;
+    }
 
     return prisma.workOrder.create({
       data: {
@@ -625,6 +649,8 @@ async function main() {
         completedAt: opts.completedAt,
         paidAt: opts.paidAt,
         paymentMethod: opts.paymentMethod,
+        cashPaidRub,
+        terminalPaidRub,
         lines: { create: lineData },
       },
     });

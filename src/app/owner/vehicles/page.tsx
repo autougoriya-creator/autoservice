@@ -43,7 +43,6 @@ export default async function VehiclesPage() {
               </td>
               <td className="px-4 py-3 text-[var(--ink-soft)]">
                 {v.make} {v.model}
-                {v.year ? ` · ${v.year}` : ""}
               </td>
               <td className="px-4 py-3 text-[var(--ink-soft)]">
                 {v.vehicleClass

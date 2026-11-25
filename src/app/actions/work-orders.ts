@@ -10,6 +10,7 @@ import { applyNormWriteoff } from "@/lib/warehouse";
 import {
   WORK_ORDER_STATUSES,
   canTransitionWorkOrderStatus,
+  workOrderTotal,
 } from "@/lib/work-order";
 
 function str(formData: FormData, key: string) {
@@ -21,6 +22,13 @@ function intOr(formData: FormData, key: string, fallback: number) {
   const raw = str(formData, key);
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function intOrNull(formData: FormData, key: string) {
+  const raw = str(formData, key);
+  if (!raw) return null;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : null;
 }
 
 const allowedStatuses: WorkOrderStatus[] = [...WORK_ORDER_STATUSES];
@@ -127,7 +135,7 @@ export async function updateWorkOrderStatus(formData: FormData) {
 
   const current = await prisma.workOrder.findFirst({
     where: { id, organizationId },
-    select: { status: true },
+    include: { lines: true },
   });
   if (!current) throw new Error("Заказ-наряд не найден");
   if (!canTransitionWorkOrderStatus(current.status, status)) {
@@ -140,13 +148,49 @@ export async function updateWorkOrderStatus(formData: FormData) {
     if (!allowedPayments.includes(paymentMethodRaw as PaymentMethod)) {
       throw new Error("Укажите вид оплаты для закрытия заказ-наряда");
     }
+    const paymentMethod = paymentMethodRaw as PaymentMethod;
+    const totalRub = workOrderTotal(current.lines);
+    let cashPaidRub: number | null = null;
+    let terminalPaidRub: number | null = null;
+
+    if (paymentMethod === "CASH_AND_TERMINAL") {
+      cashPaidRub = intOrNull(formData, "cashPaidRub");
+      terminalPaidRub = intOrNull(formData, "terminalPaidRub");
+      if (
+        cashPaidRub === null ||
+        terminalPaidRub === null ||
+        cashPaidRub < 0 ||
+        terminalPaidRub < 0
+      ) {
+        throw new Error(
+          "Для «нал + терминал» укажите суммы: сколько в кассу и сколько по терминалу",
+        );
+      }
+      if (cashPaidRub + terminalPaidRub !== totalRub) {
+        throw new Error(
+          `Сумма нал + терминал должна равняться итогу заказ-наряда (${totalRub} ₽)`,
+        );
+      }
+      if (cashPaidRub === 0 || terminalPaidRub === 0) {
+        throw new Error(
+          "Обе доли должны быть больше нуля — иначе выберите «Наличные» или «Терминал»",
+        );
+      }
+    } else if (paymentMethod === "CASH") {
+      cashPaidRub = totalRub;
+    } else if (paymentMethod === "TERMINAL") {
+      terminalPaidRub = totalRub;
+    }
+
     const writeOffByNorms = str(formData, "writeOffByNorms") === "1";
     const now = new Date();
     await prisma.workOrder.updateMany({
       where: { id, organizationId },
       data: {
         status,
-        paymentMethod: paymentMethodRaw as PaymentMethod,
+        paymentMethod,
+        cashPaidRub,
+        terminalPaidRub,
         paidAt: now,
         completedAt: now,
       },
@@ -168,6 +212,8 @@ export async function updateWorkOrderStatus(formData: FormData) {
         completedAt: null,
         paidAt: null,
         paymentMethod: null,
+        cashPaidRub: null,
+        terminalPaidRub: null,
       },
     });
   }

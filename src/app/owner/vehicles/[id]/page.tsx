@@ -102,21 +102,8 @@ export default async function VehicleEditPage({
               className="uppercase"
             />
           </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Год" htmlFor="year">
-              <TextInput
-                id="year"
-                name="year"
-                inputMode="numeric"
-                defaultValue={vehicle.year ?? ""}
-              />
-            </Field>
-            <Field label="Цвет" htmlFor="color">
-              <TextInput id="color" name="color" defaultValue={vehicle.color ?? ""} />
-            </Field>
-          </div>
-          <Field label="VIN" htmlFor="vin">
-            <TextInput id="vin" name="vin" defaultValue={vehicle.vin ?? ""} />
+          <Field label="Цвет" htmlFor="color">
+            <TextInput id="color" name="color" defaultValue={vehicle.color ?? ""} />
           </Field>
           <FormActions>
             <SubmitButton className="sm:w-auto">Сохранить</SubmitButton>

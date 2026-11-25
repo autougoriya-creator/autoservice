@@ -94,14 +94,8 @@ export default async function WorkOrderPrintPage({
             </p>
             <p className="text-sm text-[var(--ink-soft)]">
               {workOrder.vehicle.plate}
-              {workOrder.vehicle.year ? ` · ${workOrder.vehicle.year}` : ""}
               {workOrder.vehicle.color ? ` · ${workOrder.vehicle.color}` : ""}
             </p>
-            {workOrder.vehicle.vin ? (
-              <p className="text-sm text-[var(--ink-soft)]">
-                VIN: {workOrder.vehicle.vin}
-              </p>
-            ) : null}
           </div>
         </section>
 
@@ -145,6 +139,9 @@ export default async function WorkOrderPrintPage({
             {workOrder.paymentMethod ? (
               <p>
                 Оплата: {paymentMethodLabel[workOrder.paymentMethod]}
+                {workOrder.paymentMethod === "CASH_AND_TERMINAL"
+                  ? ` · нал ${formatRub(workOrder.cashPaidRub ?? 0)} / терминал ${formatRub(workOrder.terminalPaidRub ?? 0)}`
+                  : ""}
               </p>
             ) : null}
             {workOrder.notes ? <p className="mt-2">Примечание: {workOrder.notes}</p> : null}

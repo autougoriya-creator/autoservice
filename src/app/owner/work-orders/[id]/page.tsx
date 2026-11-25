@@ -1,10 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  updateWorkOrderNotes,
-  updateWorkOrderStatus,
-} from "@/app/actions/work-orders";
-import { WorkOrderAddLineForm } from "@/components/work-order-add-line-form";
+import { updateWorkOrderNotes } from "@/app/actions/work-orders";
+import { WorkOrderAddLineButton } from "@/components/work-order-add-line-form";
+import { WorkOrderStatusForm } from "@/components/work-order-status-form";
 import { prisma } from "@/lib/prisma";
 import {
   formatDateTime,
@@ -26,7 +24,6 @@ import { ButtonLink, SectionTitle, StatusPill, SubmitButton } from "@/components
 import {
   Field,
   FormCard,
-  TextSelect,
   TextTextarea,
 } from "@/components/forms";
 
@@ -47,6 +44,8 @@ export default async function WorkOrderDetailPage({
         vehicle: { include: { vehicleClass: true } },
         lines: { orderBy: { name: "asc" } },
         organization: true,
+        post: true,
+        sourceBooking: true,
       },
     }),
     prisma.service.findMany({
@@ -87,45 +86,134 @@ export default async function WorkOrderDetailPage({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <FormCard>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
-            Клиент
-          </p>
-          <Link
-            href={`/owner/clients/${workOrder.customerId}`}
-            className="brand-mark mt-2 block text-xl hover:text-[var(--accent)]"
-          >
-            {workOrder.customer.name}
-          </Link>
-          <p className="mt-1 text-sm text-[var(--ink-soft)]">
-            Телефон (ID): {workOrder.customer.phone}
-          </p>
-        </FormCard>
-        <FormCard>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
-            Автомобиль
-          </p>
-          <Link
-            href={`/owner/vehicles/${workOrder.vehicleId}`}
-            className="brand-mark mt-2 block text-xl hover:text-[var(--accent)]"
-          >
-            {workOrder.vehicle.make} {workOrder.vehicle.model}
-          </Link>
-          <p className="mt-1 text-sm text-[var(--ink-soft)]">
-            {workOrder.vehicle.plate}
-            {workOrder.vehicle.color ? ` · ${workOrder.vehicle.color}` : ""}
-            {" · "}
-            {vehicleClassLabel(workOrder.vehicle.vehicleClass)}
-          </p>
-        </FormCard>
-      </div>
+      <FormCard>
+        <h2 className="brand-mark mb-4 text-lg">Сведения о заказ-наряде</h2>
+        <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+              Клиент
+            </dt>
+            <dd className="mt-1">
+              <Link
+                href={`/owner/clients/${workOrder.customerId}`}
+                className="font-semibold text-[var(--ink)] hover:text-[var(--accent)]"
+              >
+                {workOrder.customer.name}
+              </Link>
+              <p className="text-sm text-[var(--ink-soft)]">
+                Телефон (ID): {workOrder.customer.phone}
+              </p>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+              Автомобиль
+            </dt>
+            <dd className="mt-1">
+              <Link
+                href={`/owner/vehicles/${workOrder.vehicleId}`}
+                className="font-semibold text-[var(--ink)] hover:text-[var(--accent)]"
+              >
+                {workOrder.vehicle.make} {workOrder.vehicle.model}
+              </Link>
+              <p className="text-sm text-[var(--ink-soft)]">
+                {workOrder.vehicle.plate}
+                {workOrder.vehicle.color ? ` · ${workOrder.vehicle.color}` : ""}
+                {" · "}
+                {vehicleClassLabel(workOrder.vehicle.vehicleClass)}
+              </p>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+              Пост
+            </dt>
+            <dd className="mt-1 font-medium text-[var(--ink)]">
+              {workOrder.post?.name ?? "Не назначен"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+              Назначено
+            </dt>
+            <dd className="mt-1 text-sm text-[var(--ink)]">
+              {workOrder.scheduledAt
+                ? formatDateTime(workOrder.scheduledAt)
+                : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+              Закрыт
+            </dt>
+            <dd className="mt-1 text-sm text-[var(--ink)]">
+              {workOrder.completedAt
+                ? formatDateTime(workOrder.completedAt)
+                : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+              Оплата
+            </dt>
+            <dd className="mt-1 text-sm text-[var(--ink)]">
+              {workOrder.paymentMethod
+                ? paymentMethodLabel[workOrder.paymentMethod]
+                : "Не указана"}
+              {workOrder.paidAt
+                ? ` · ${formatDateTime(workOrder.paidAt)}`
+                : null}
+              {workOrder.paymentMethod === "CASH_AND_TERMINAL" ? (
+                <span className="mt-1 block text-[var(--ink-soft)]">
+                  Нал в кассу: {formatRub(workOrder.cashPaidRub ?? 0)}
+                  {" · "}
+                  Терминал: {formatRub(workOrder.terminalPaidRub ?? 0)}
+                </span>
+              ) : null}
+            </dd>
+          </div>
+          {workOrder.sourceBooking ? (
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+                Исходная запись
+              </dt>
+              <dd className="mt-1 text-sm text-[var(--ink)]">
+                <Link
+                  href="/owner/desk"
+                  className="font-semibold hover:text-[var(--accent)]"
+                >
+                  С графиком ·{" "}
+                  {formatDateTime(workOrder.sourceBooking.startsAt)}
+                </Link>
+              </dd>
+            </div>
+          ) : null}
+          <div className="sm:col-span-2 lg:col-span-3">
+            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+              Комментарий
+            </dt>
+            <dd className="mt-1 text-sm text-[var(--ink)]">
+              {workOrder.notes?.trim() ? workOrder.notes : "—"}
+            </dd>
+          </div>
+        </dl>
+      </FormCard>
 
       <FormCard>
-        <h2 className="brand-mark mb-4 text-lg">Услуги</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="brand-mark text-lg">Услуги в заказе</h2>
+          {canAddLine ? (
+            <WorkOrderAddLineButton
+              workOrderId={workOrder.id}
+              vehicleClassId={workOrder.vehicle.vehicleClassId}
+              services={services}
+            />
+          ) : null}
+        </div>
         {workOrder.lines.length === 0 ? (
           <p className="py-2 text-sm text-[var(--ink-soft)]">
-            Услуг пока нет — добавьте строку ниже.
+            Услуг пока нет
+            {canAddLine ? " — нажмите «Добавить услугу»." : "."}
           </p>
         ) : (
           <ul className="divide-y divide-[var(--line)]">
@@ -138,6 +226,8 @@ export default async function WorkOrderDetailPage({
                   <p className="font-medium text-[var(--ink)]">{line.name}</p>
                   <p className="text-xs text-[var(--ink-soft)]">
                     {formatDuration(line.durationMin)} × {line.quantity}
+                    {" · "}
+                    {formatRub(line.priceRub)} / шт.
                   </p>
                 </div>
                 <p className="font-semibold text-[var(--ink)]">
@@ -153,89 +243,18 @@ export default async function WorkOrderDetailPage({
           </p>
           <p className="brand-mark text-2xl">{formatRub(total)}</p>
         </div>
-        {workOrder.paymentMethod ? (
-          <p className="mt-3 text-sm text-[var(--ink-soft)]">
-            Оплата: {paymentMethodLabel[workOrder.paymentMethod]}
-            {workOrder.paidAt
-              ? ` · ${formatDateTime(workOrder.paidAt)}`
-              : null}
-          </p>
-        ) : null}
       </FormCard>
 
-      {canAddLine ? (
-        <WorkOrderAddLineForm
-          workOrderId={workOrder.id}
-          vehicleClassId={workOrder.vehicle.vehicleClassId}
-          services={services}
-        />
-      ) : null}
-
       <div className="grid gap-4 md:grid-cols-2">
-        <FormCard>
-          <form action={updateWorkOrderStatus} className="space-y-4">
-            <input type="hidden" name="id" value={workOrder.id} />
-            <Field
-              label="Статус"
-              htmlFor="status"
-              hint="Заказ-наряд: в работе → закрыт (статусы записи живут отдельно)"
-            >
-              <TextSelect
-                id="status"
-                name="status"
-                defaultValue={workOrder.status}
-                disabled={statusOptions.length <= 1}
-              >
-                {statusOptions.map((value) => (
-                  <option key={value} value={value}>
-                    {workOrderStatusLabel[value]}
-                  </option>
-                ))}
-              </TextSelect>
-            </Field>
-            <Field label="Вид оплаты (для закрытия)" htmlFor="paymentMethod">
-              <TextSelect
-                id="paymentMethod"
-                name="paymentMethod"
-                defaultValue={workOrder.paymentMethod ?? ""}
-              >
-                <option value="">— выберите при закрытии —</option>
-                {Object.entries(paymentMethodLabel).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </TextSelect>
-            </Field>
-            <label className="flex items-start gap-2 text-sm text-[var(--ink)]">
-              <input
-                type="checkbox"
-                name="writeOffByNorms"
-                value="1"
-                defaultChecked
-                className="mt-1"
-              />
-              <span>
-                При закрытии списать техжидкости по нормам услуг
-                <span className="mt-0.5 block text-xs text-[var(--ink-soft)]">
-                  Если у услуг заданы нормы расхода на складе.
-                </span>
-              </span>
-            </label>
-            <p className="text-xs text-[var(--ink-soft)]">
-              Закрытие заказ-наряда возможно только из статуса «В работе» и с
-              указанием вида оплаты. Администратор проверяет состав услуг при
-              проведении.
-            </p>
-            {statusOptions.length > 1 ? (
-              <SubmitButton>Обновить статус</SubmitButton>
-            ) : (
-              <p className="text-sm text-[var(--ink-soft)]">
-                Дальнейших переходов нет — заказ закрыт.
-              </p>
-            )}
-          </form>
-        </FormCard>
+        <WorkOrderStatusForm
+          workOrderId={workOrder.id}
+          status={workOrder.status}
+          statusOptions={statusOptions}
+          paymentMethod={workOrder.paymentMethod}
+          cashPaidRub={workOrder.cashPaidRub}
+          terminalPaidRub={workOrder.terminalPaidRub}
+          totalRub={total}
+        />
 
         <FormCard>
           <form action={updateWorkOrderNotes} className="space-y-4">

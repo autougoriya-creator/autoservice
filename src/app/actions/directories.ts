@@ -132,9 +132,6 @@ export async function createVehicle(formData: FormData) {
   });
   if (!customer) throw new Error("Клиент не найден");
 
-  const yearRaw = str(formData, "year");
-  const year = yearRaw ? Number.parseInt(yearRaw, 10) : null;
-
   const vehicle = await prisma.vehicle.create({
     data: {
       organizationId,
@@ -143,9 +140,7 @@ export async function createVehicle(formData: FormData) {
       make,
       model,
       plate,
-      year: year && Number.isFinite(year) ? year : null,
       color: optStr(formData, "color"),
-      vin: optStr(formData, "vin"),
     },
   });
 
@@ -176,9 +171,6 @@ export async function updateVehicle(formData: FormData) {
   });
   if (!customer) throw new Error("Клиент не найден");
 
-  const yearRaw = str(formData, "year");
-  const year = yearRaw ? Number.parseInt(yearRaw, 10) : null;
-
   await prisma.vehicle.updateMany({
     where: { id, organizationId },
     data: {
@@ -187,9 +179,7 @@ export async function updateVehicle(formData: FormData) {
       make,
       model,
       plate,
-      year: year && Number.isFinite(year) ? year : null,
       color: optStr(formData, "color"),
-      vin: optStr(formData, "vin"),
     },
   });
 

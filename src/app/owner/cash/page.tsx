@@ -42,7 +42,7 @@ export default async function CashPage({
         title={isOwner ? "Касса за день" : "Операционная касса за день"}
         description={
           isOwner
-            ? "Сводка оплат по закрытым заказ-нарядам. Полный учёт кассы для владельца."
+            ? "Сводка оплат по закрытым заказ-нарядам. Для снятия кассы — нал в кассе и терминал отдельно (включая доли «нал+терминал»)."
             : "Сводка оплат точки за выбранный день (операционный просмотр администратора)."
         }
       />
@@ -72,13 +72,38 @@ export default async function CashPage({
         </p>
       </Toolbar>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <FormCard>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
-            Итого
+            Итого выручка
           </p>
           <p className="brand-mark mt-2 text-2xl">{formatRub(summary.totalRub)}</p>
         </FormCard>
+        <FormCard>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+            В кассе (нал)
+          </p>
+          <p className="brand-mark mt-2 text-2xl">
+            {formatRub(summary.cashDrawerRub)}
+          </p>
+          <p className="mt-1 text-xs text-[var(--ink-soft)]">
+            Наличные + доля нал из «нал+терминал»
+          </p>
+        </FormCard>
+        <FormCard>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+            По терминалу
+          </p>
+          <p className="brand-mark mt-2 text-2xl">
+            {formatRub(summary.terminalSettledRub)}
+          </p>
+          <p className="mt-1 text-xs text-[var(--ink-soft)]">
+            Терминал + доля терминала из «нал+терминал»
+          </p>
+        </FormCard>
+      </div>
+
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {PAYMENT_METHODS.map((method) => (
           <FormCard key={method}>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
@@ -101,7 +126,15 @@ export default async function CashPage({
         />
       ) : (
         <DataTable
-          headers={["ЗН", "Клиент (телефон)", "Оплата", "Сумма", "Время", ""]}
+          headers={[
+            "ЗН",
+            "Клиент (телефон)",
+            "Оплата",
+            "Сумма",
+            "Нал / терминал",
+            "Время",
+            "",
+          ]}
         >
           {summary.rows.map((row) => (
             <tr key={row.id}>
@@ -118,6 +151,19 @@ export default async function CashPage({
                 {paymentMethodLabel[row.paymentMethod] ?? row.paymentMethod}
               </td>
               <td className="px-4 py-3 font-medium">{formatRub(row.amountRub)}</td>
+              <td className="px-4 py-3 text-sm text-[var(--ink-soft)]">
+                {row.paymentMethod === "CASH_AND_TERMINAL" ||
+                row.paymentMethod === "CASH" ||
+                row.paymentMethod === "TERMINAL" ? (
+                  <>
+                    {formatRub(row.cashPaidRub ?? 0)}
+                    {" / "}
+                    {formatRub(row.terminalPaidRub ?? 0)}
+                  </>
+                ) : (
+                  "—"
+                )}
+              </td>
               <td className="px-4 py-3 whitespace-nowrap text-[var(--ink-soft)]">
                 {formatDateTime(row.paidAt)}
               </td>
