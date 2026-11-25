@@ -91,7 +91,13 @@ type DragState = {
   originOffset: number;
   originDuration: number;
   grabOffsetMin: number;
+  /** Пиксели pointerdown — порог, чтобы микросдвиг не глушил dblclick. */
+  startClientX: number;
+  startClientY: number;
 };
+
+/** Сдвиг указателя, после которого жест считается перетаскиванием, а не кликом. */
+const DRAG_THRESHOLD_PX = 5;
 
 type CreateDraft = {
   postId: string;
@@ -226,6 +232,16 @@ export function InteractiveDesk({
   const onPointerMove = useCallback(
     (e: PointerEvent) => {
       if (!drag) return;
+      const movedPx = Math.hypot(
+        e.clientX - drag.startClientX,
+        e.clientY - drag.startClientY,
+      );
+      if (!didDrag.current && movedPx < DRAG_THRESHOLD_PX) {
+        return;
+      }
+      didDrag.current = true;
+      e.preventDefault();
+
       const entries = Object.entries(trackRefs.current).filter(
         ([, el]) => el != null,
       ) as [string, HTMLDivElement][];
@@ -254,7 +270,6 @@ export function InteractiveDesk({
           offsetMin: nextOffset,
           durationMin: drag.originDuration,
         });
-        didDrag.current = true;
       } else {
         const start = drag.originOffset;
         const maxDur = BOARD_WINDOW_MIN - start;
@@ -267,14 +282,13 @@ export function InteractiveDesk({
           offsetMin: start,
           durationMin: duration,
         });
-        didDrag.current = true;
       }
     },
     [drag],
   );
 
   const onPointerUp = useCallback(() => {
-    if (!drag || !live) {
+    if (!drag || !live || !didDrag.current) {
       setDrag(null);
       setLive(null);
       return;
@@ -333,7 +347,8 @@ export function InteractiveDesk({
     mode: "move" | "resize",
   ) {
     if (readOnly) return;
-    e.preventDefault();
+    // Не preventDefault на pointerdown — иначе браузер глушит dblclick.
+    // Для touch достаточно CSS touch-none на плашке.
     e.stopPropagation();
     didDrag.current = false;
     const track = trackRefs.current[block.postId];
@@ -345,7 +360,7 @@ export function InteractiveDesk({
       offsetMinutesFromDate(new Date(block.startsAt)),
       block.durationMin,
     );
-    setSelectedId(block.id);
+    // Не открываем карточку на pointerdown — иначе модалка всплывает при любом drag.
     setCreateDraft(null);
     setDrag({
       id: block.id,
@@ -354,6 +369,8 @@ export function InteractiveDesk({
       originOffset,
       originDuration: block.durationMin,
       grabOffsetMin: pointerOffset - originOffset,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
     });
     setLive({
       postId: block.postId,
@@ -392,8 +409,8 @@ export function InteractiveDesk({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-[var(--ink-soft)]">
           {readOnly
-            ? "Только просмотр закреплённых постов · тап по карточке — окно заказа"
-            : "Тап по свободному слоту — новая запись · тап по карточке — окно заказа · перетаскивание и край справа — как раньше"}
+            ? "Только просмотр закреплённых постов · двойной клик по карточке — окно заказа"
+            : "Тап по свободному слоту — новая запись · двойной клик по карточке — окно заказа · перетаскивание и край справа — как раньше"}
         </p>
         {readOnly ? null : (
           <button
@@ -539,7 +556,8 @@ export function InteractiveDesk({
                         key={`${block.kind}-${block.id}`}
                         role="button"
                         tabIndex={0}
-                        onClick={(e) => {
+                        title="Двойной клик — открыть карточку"
+                        onDoubleClick={(e) => {
                           e.stopPropagation();
                           if (didDrag.current) {
                             didDrag.current = false;
@@ -547,6 +565,13 @@ export function InteractiveDesk({
                           }
                           setCreateDraft(null);
                           setSelectedId(block.id);
+                        }}
+                        onClick={(e) => {
+                          // Одиночный клик не открывает карточку (иначе конфликтует с drag).
+                          e.stopPropagation();
+                          if (didDrag.current) {
+                            didDrag.current = false;
+                          }
                         }}
                         onPointerDown={(e) => beginDrag(e, block, "move")}
                         className={`absolute top-2 bottom-2 overflow-hidden rounded-md border px-2 py-1.5 ${
