@@ -59,14 +59,34 @@ export type AdminUpsellBonusRow = {
   bookedServiceName: string;
 };
 
+export type AdminUpsellBonusOpts = {
+  /**
+   * Окна смен администратора. Если заданы — учитываем только ЗН,
+   * закрытые в эти интервалы (бонус за смену, не от поста админа).
+   * Пустой массив = ноль бонуса. `undefined` = весь период.
+   */
+  shiftWindows?: { startsAt: Date; endsAt: Date }[];
+};
+
+function completedInShiftWindows(
+  completedAt: Date,
+  windows: { startsAt: Date; endsAt: Date }[],
+) {
+  return windows.some(
+    (w) => completedAt >= w.startsAt && completedAt <= w.endsAt,
+  );
+}
+
 /**
  * Бонус админу за допродажи: самозапись на 1 услугу → закрытый ЗН с доп. услугами.
+ * Считается по закрытым ЗН за период/смены организации — без привязки к посту админа.
  * % задаёт OWNER на организации.
  */
 export async function buildAdminUpsellBonus(
   organizationId: string,
   period: PeriodKey,
   anchor = new Date(),
+  opts?: AdminUpsellBonusOpts,
 ) {
   const { start, end } = periodBounds(period, anchor);
 
@@ -92,6 +112,7 @@ export async function buildAdminUpsellBonus(
   const rows: AdminUpsellBonusRow[] = [];
   let upsellTotalRub = 0;
   let bonusTotalRub = 0;
+  const shiftWindows = opts?.shiftWindows;
 
   for (const wo of closed) {
     const booking = wo.sourceBooking;
@@ -103,6 +124,16 @@ export async function buildAdminUpsellBonus(
       })
     ) {
       continue;
+    }
+
+    const completedAt = wo.completedAt ?? wo.updatedAt;
+    if (shiftWindows !== undefined) {
+      if (
+        shiftWindows.length === 0 ||
+        !completedInShiftWindows(completedAt, shiftWindows)
+      ) {
+        continue;
+      }
     }
 
     const upsellRub = upsellAmountFromLines(booking.lines, wo.lines);
@@ -118,7 +149,7 @@ export async function buildAdminUpsellBonus(
     rows.push({
       workOrderId: wo.id,
       number: wo.number,
-      completedAt: wo.completedAt ?? wo.updatedAt,
+      completedAt,
       bookingPlannedRub: bookingPlanned,
       workOrderTotalRub: woTotal,
       upsellRub,

@@ -20,7 +20,7 @@ export async function buildPostPnL(
 ) {
   const { start, end } = periodBounds(period, anchor);
 
-  const [posts, assignments, shifts, workOrders, profiles, adminUpsell] =
+  const [posts, assignments, shifts, workOrders, profiles, adminMemberships] =
     await Promise.all([
     prisma.servicePost.findMany({
       where: { organizationId, isActive: true },
@@ -41,13 +41,40 @@ export async function buildPostPnL(
       where: { organizationId, isActive: true },
       include: { user: true },
     }),
-    buildAdminUpsellBonus(organizationId, period, anchor),
+    prisma.membership.findMany({
+      where: { organizationId, role: "ADMIN" },
+      select: { userId: true },
+    }),
   ]);
+
+  const adminUserIds = new Set(adminMemberships.map((m) => m.userId));
+  const adminProfileIds = new Set(
+    profiles.filter((p) => adminUserIds.has(p.userId)).map((p) => p.id),
+  );
+  const periodAdminShifts = shifts.filter(
+    (s) =>
+      adminProfileIds.has(s.staffProfileId) &&
+      s.endsAt >= start &&
+      s.startsAt <= end,
+  );
+  // Бонус админу — из закрытых ЗН за окна его смен, не от «поста админа».
+  const adminUpsell = await buildAdminUpsellBonus(
+    organizationId,
+    period,
+    anchor,
+    {
+      shiftWindows: periodAdminShifts.map((s) => ({
+        startsAt: s.startsAt,
+        endsAt: s.endsAt,
+      })),
+    },
+  );
 
   const activeAssignments = assignments.filter(
     (a) =>
-      a.activeTo == null ||
-      (a.activeTo >= start && a.activeFrom <= end),
+      !adminProfileIds.has(a.staffProfileId) &&
+      (a.activeTo == null ||
+        (a.activeTo >= start && a.activeFrom <= end)),
   );
 
   const periodShifts = shifts.filter(
@@ -151,7 +178,7 @@ export async function buildStaffPayrollEstimate(
   anchor = new Date(),
 ) {
   const { start, end } = periodBounds(period, anchor);
-  const [profile, membership, adminUpsell] = await Promise.all([
+  const [profile, membership] = await Promise.all([
     prisma.staffProfile.findFirst({
       where: { organizationId, userId, isActive: true },
       include: {
@@ -166,22 +193,40 @@ export async function buildStaffPayrollEstimate(
       where: { organizationId, userId },
       select: { role: true },
     }),
-    buildAdminUpsellBonus(organizationId, period, anchor),
   ]);
 
   if (!profile) return null;
 
   const isAdminRole = membership?.role === "ADMIN";
-  const openAssignments = profile.assignments.filter((a) => a.activeTo == null);
+  // Админ не закрепляется за постом — доли/выручка постов только у мойщиков.
+  const openAssignments = isAdminRole
+    ? []
+    : profile.assignments.filter((a) => a.activeTo == null);
   const postIds = openAssignments.map((a) => a.postId);
   const shareByPost = new Map(
     openAssignments.map((a) => [a.postId, a.sharePercent] as const),
   );
 
-  const workOrders = await prisma.workOrder.findMany({
-    where: { organizationId },
-    include: { lines: true, post: true },
-  });
+  const periodShifts = profile.shifts.filter(
+    (s) => s.endsAt >= start && s.startsAt <= end,
+  );
+
+  // Админ: бонус из закрытых ЗН за окна его смен (не от «поста админа»).
+  const adminUpsell = isAdminRole
+    ? await buildAdminUpsellBonus(organizationId, period, anchor, {
+        shiftWindows: periodShifts.map((s) => ({
+          startsAt: s.startsAt,
+          endsAt: s.endsAt,
+        })),
+      })
+    : null;
+
+  const workOrders = isAdminRole
+    ? []
+    : await prisma.workOrder.findMany({
+        where: { organizationId },
+        include: { lines: true, post: true },
+      });
 
   const periodWOs = workOrders.filter((wo) => {
     if (!wo.postId || !postIds.includes(wo.postId)) return false;
@@ -190,7 +235,7 @@ export async function buildStaffPayrollEstimate(
     return t >= start && t <= end;
   });
 
-  const revenue = sumWorkOrderRevenue(periodWOs);
+  const revenue = isAdminRole ? 0 : sumWorkOrderRevenue(periodWOs);
   let attributed = 0;
   for (const postId of postIds) {
     const postRevenue = sumWorkOrderRevenue(
@@ -200,9 +245,6 @@ export async function buildStaffPayrollEstimate(
       (postRevenue * (shareByPost.get(postId) ?? 100)) / 100,
     );
   }
-  const periodShifts = profile.shifts.filter(
-    (s) => s.endsAt >= start && s.startsAt <= end,
-  );
 
   const baseEstimate =
     String(profile.payMode) === "SALARY"
@@ -213,7 +255,7 @@ export async function buildStaffPayrollEstimate(
         )
       : dealCostForRevenue(attributed, profile.dealPercent);
 
-  const upsellBonus = isAdminRole ? adminUpsell.bonusTotalRub : 0;
+  const upsellBonus = adminUpsell?.bonusTotalRub ?? 0;
   const estimate = baseEstimate + upsellBonus;
 
   return {
@@ -236,8 +278,8 @@ export async function buildStaffPayrollEstimate(
     revenue,
     baseEstimate,
     upsellBonus,
-    upsellBonusPercent: isAdminRole ? adminUpsell.bonusPercent : 0,
-    upsellRows: isAdminRole ? adminUpsell.rows : [],
+    upsellBonusPercent: adminUpsell?.bonusPercent ?? 0,
+    upsellRows: adminUpsell?.rows ?? [],
     estimate,
     isAdminRole,
   };

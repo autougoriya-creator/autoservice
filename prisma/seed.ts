@@ -898,7 +898,13 @@ async function main() {
     ],
   });
 
-  const shift = (profileId: string, postId: string, hourStart: number, hourEnd: number, dayOffset = 0) => {
+  const shift = (
+    profileId: string,
+    postId: string | null,
+    hourStart: number,
+    hourEnd: number,
+    dayOffset = 0,
+  ) => {
     const startsAt = new Date(today);
     startsAt.setDate(startsAt.getDate() + dayOffset);
     startsAt.setHours(hourStart, 0, 0, 0);
@@ -916,7 +922,8 @@ async function main() {
 
   await prisma.staffShift.createMany({
     data: [
-      shift(profileOlga.id, posts[0].id, 8, 20, 0),
+      // Админ — смена без поста; бонус считается по закрытым ЗН в окне смены
+      shift(profileOlga.id, null, 8, 20, 0),
       shift(profileSergey.id, posts[0].id, 8, 16, 0),
       shift(profileSergey.id, posts[0].id, 8, 16, 1),
       shift(profilePavel.id, posts[1].id, 10, 18, 0),
@@ -931,7 +938,7 @@ async function main() {
   console.log("Demo tenant:", org.name, `(${org.slug})`);
   console.log("Logins (mock auth, no password):");
   console.log("  owner@demo.local     → владелец (ЗП, экономика, % бонуса админу)");
-  console.log("  admin@demo.local      → администратор (оклад + бонус допродаж)");
+  console.log("  admin@demo.local      → администратор (оклад + бонус допродаж за смену, без поста)");
   console.log("  staff@demo.local      → сотрудник / мойщик (сделка 35%)");
   console.log("  washer@demo.local     → сотрудник / мойщик (сделка 30%)");
   console.log("  mechanic@demo.local   → сотрудник / слесарь (оклад)");

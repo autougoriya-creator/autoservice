@@ -55,13 +55,17 @@ export default async function StaffPage() {
   const profiledUserIds = new Set(profiles.map((p) => p.userId));
   const unprofiled = staffUsers.filter((m) => !profiledUserIds.has(m.userId));
   const bonusPercent = org?.adminUpsellBonusPercent ?? 0;
+  const roleByUserId = new Map(staffUsers.map((m) => [m.userId, m.role]));
+  const floorProfiles = profiles.filter(
+    (p) => p.isActive && roleByUserId.get(p.userId) !== "ADMIN",
+  );
 
   return (
     <div className="space-y-10">
       <SectionTitle
         eyebrow="Персонал"
         title="Сотрудники и оплата"
-        description="Мойщики, слесари и администратор: сделка %, оклад, бонус админу за допродажи после самозаписи."
+        description="Мойщики и слесари — на постах; администратор без поста: оклад + бонус за допродажи из закрытых ЗН за смену."
       />
 
       <Toolbar>
@@ -82,9 +86,9 @@ export default async function StaffPage() {
       <FormCard>
         <h2 className="brand-mark mb-2 text-lg">Бонус администратору за допродажи</h2>
         <p className="mb-4 text-sm text-[var(--ink-soft)]">
-          Если клиент самозаписался на одну услугу, а заказ-наряд закрыт с
-          дополнительными услугами — администратор получает % от суммы этих
-          допродаж к ЗП.
+          Если клиент самозаписался на одну услугу, а заказ-наряд закрыт в смену
+          администратора с дополнительными услугами — админ получает % от суммы
+          этих допродаж к ЗП (не от поста: у администратора поста нет).
         </p>
         <form action={updateAdminUpsellBonusPercent} className="flex flex-wrap items-end gap-4">
           <Field label="% от допродаж" htmlFor="adminUpsellBonusPercent">
@@ -106,9 +110,10 @@ export default async function StaffPage() {
         headers={["Сотрудник", "Должность", "Оплата", "Посты", ""]}
       >
         {profiles.map((p) => {
-          const myAssignments = assignments.filter(
-            (a) => a.staffProfileId === p.id,
-          );
+          const isAdminProfile = roleByUserId.get(p.userId) === "ADMIN";
+          const myAssignments = isAdminProfile
+            ? []
+            : assignments.filter((a) => a.staffProfileId === p.id);
           return (
             <tr key={p.id}>
               <td className="px-4 py-3">
@@ -127,11 +132,13 @@ export default async function StaffPage() {
                 </p>
               </td>
               <td className="px-4 py-3 text-[var(--ink-soft)]">
-                {myAssignments.length === 0
-                  ? "—"
-                  : myAssignments
-                      .map((a) => `${a.post.name} (${a.sharePercent}%)`)
-                      .join(", ")}
+                {isAdminProfile
+                  ? "без поста"
+                  : myAssignments.length === 0
+                    ? "—"
+                    : myAssignments
+                        .map((a) => `${a.post.name} (${a.sharePercent}%)`)
+                        .join(", ")}
               </td>
               <td className="px-4 py-3 text-right">
                 <Link
@@ -208,7 +215,8 @@ export default async function StaffPage() {
         <FormCard>
           <h2 className="brand-mark mb-4 text-lg">Закрепить за постом</h2>
           <p className="mb-3 text-xs text-[var(--ink-soft)]">
-            На пост можно назначить нескольких. Доли % удобнее править в{" "}
+            Только мойщики/слесари. Администратор на пост не назначается. Доли % —
+            в{" "}
             <Link href="/owner/posts" className="font-semibold text-[var(--accent)]">
               карточках постов
             </Link>
@@ -226,13 +234,11 @@ export default async function StaffPage() {
             </Field>
             <Field label="Сотрудник" htmlFor="staffProfileId">
               <TextSelect id="staffProfileId" name="staffProfileId" required>
-                {profiles
-                  .filter((p) => p.isActive)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.user.name} · {p.title}
-                    </option>
-                  ))}
+                {floorProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.user.name} · {p.title}
+                  </option>
+                ))}
               </TextSelect>
             </Field>
             <FormActions>

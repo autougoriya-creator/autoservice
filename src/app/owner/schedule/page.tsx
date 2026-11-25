@@ -38,7 +38,7 @@ export default async function SchedulePage() {
   const defaultEnd = new Date(now);
   defaultEnd.setHours(18, 0, 0, 0);
 
-  const [profiles, posts, shifts] = await Promise.all([
+  const [profiles, posts, shifts, adminMemberships] = await Promise.all([
     prisma.staffProfile.findMany({
       where: { organizationId, isActive: true },
       include: { user: true },
@@ -60,14 +60,19 @@ export default async function SchedulePage() {
       },
       orderBy: { startsAt: "asc" },
     }),
+    prisma.membership.findMany({
+      where: { organizationId, role: "ADMIN" },
+      select: { userId: true },
+    }),
   ]);
+  const adminUserIds = new Set(adminMemberships.map((m) => m.userId));
 
   return (
     <div className="space-y-10">
       <SectionTitle
         eyebrow="График"
         title="Смены персонала"
-        description="Назначьте смены мойщикам и слесарям по постам. MVP: неделя вокруг сегодня."
+        description="Смены мойщиков/слесарей — с постом; администратор — смена без поста (бонус за закрытые ЗН в это окно)."
       />
 
       <Toolbar>
@@ -101,7 +106,9 @@ export default async function SchedulePage() {
                 </p>
               </td>
               <td className="px-4 py-3 text-[var(--ink-soft)]">
-                {s.post?.name ?? "—"}
+                {adminUserIds.has(s.staffProfile.userId)
+                  ? "без поста"
+                  : (s.post?.name ?? "—")}
               </td>
               <td className="px-4 py-3 text-[var(--ink-soft)]">
                 {formatDateTime(s.startsAt)}
@@ -137,7 +144,10 @@ export default async function SchedulePage() {
               ))}
             </TextSelect>
           </Field>
-          <Field label="Пост (необязательно)" htmlFor="postId">
+          <Field
+            label="Пост (мойщики/слесари; у админа игнорируется)"
+            htmlFor="postId"
+          >
             <TextSelect id="postId" name="postId" defaultValue="">
               <option value="">Без поста</option>
               {posts.map((p) => (
