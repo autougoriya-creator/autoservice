@@ -57,7 +57,7 @@ export function AppShellNav({
                 href={link.href}
                 className={`shrink-0 rounded-md px-3 py-2 text-sm font-medium transition ${
                   active
-                    ? "bg-[var(--ink)] text-white"
+                    ? "!bg-[var(--ink)] !text-white"
                     : "text-[var(--ink-soft)] hover:bg-white hover:text-[var(--ink)]"
                 }`}
               >

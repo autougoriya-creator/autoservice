@@ -20,6 +20,7 @@ export default async function ClientLayout({
         role={roleLabel[session.membership.role]}
         links={[
           { href: "/client", label: "Обзор" },
+          { href: "/client/book", label: "Запись" },
           { href: "/client/orders", label: "История" },
           { href: "/client/cameras", label: "Камеры" },
         ]}

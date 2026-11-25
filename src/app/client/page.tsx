@@ -12,7 +12,7 @@ import {
   workOrderNumberLabel,
   workOrderTotal,
 } from "@/lib/work-order";
-import { SectionTitle, StatusPill } from "@/components/ui";
+import { ButtonLink, SectionTitle, StatusPill } from "@/components/ui";
 
 export default async function ClientCabinetPage() {
   const session = await requireSession(["CLIENT"]);
@@ -22,7 +22,7 @@ export default async function ClientCabinetPage() {
     where: { organizationId: orgId, userId: session.id },
   });
 
-  const [nextBooking, lastWorkOrder] = await Promise.all([
+  const [nextBooking, nextClientOrder, lastWorkOrder] = await Promise.all([
     prisma.booking.findFirst({
       where: {
         organizationId: orgId,
@@ -35,6 +35,20 @@ export default async function ClientCabinetPage() {
     }),
     customer
       ? prisma.workOrder.findFirst({
+          where: {
+            organizationId: orgId,
+            customerId: customer.id,
+            scheduledAt: { gte: new Date() },
+            status: {
+              in: ["NEW_FROM_CLIENT", "NEW", "CONFIRMED"],
+            },
+          },
+          include: { lines: true, vehicle: true, post: true },
+          orderBy: { scheduledAt: "asc" },
+        })
+      : Promise.resolve(null),
+    customer
+      ? prisma.workOrder.findFirst({
           where: { organizationId: orgId, customerId: customer.id },
           include: { lines: true, vehicle: true },
           orderBy: { createdAt: "desc" },
@@ -42,20 +56,55 @@ export default async function ClientCabinetPage() {
       : Promise.resolve(null),
   ]);
 
+  const upcomingFromSelf =
+    nextClientOrder &&
+    (!nextBooking ||
+      (nextClientOrder.scheduledAt &&
+        nextClientOrder.scheduledAt <= nextBooking.startsAt))
+      ? nextClientOrder
+      : null;
+
   return (
     <div>
       <SectionTitle
         eyebrow="Клиент"
         title={`Здравствуйте, ${session.name.split(" ")[0]}`}
-        description={`Личный кабинет в «${session.membership.organization.name}»: ближайшая запись, история и блок камер.`}
+        description={`Личный кабинет в «${session.membership.organization.name}»: запись онлайн, история и блок камер.`}
       />
+
+      <div className="mb-4">
+        <ButtonLink href="/client/book">Записаться онлайн</ButtonLink>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <section className="rounded-xl border border-[var(--line)] bg-white/85 p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
             Ближайшая запись
           </p>
-          {nextBooking ? (
+          {upcomingFromSelf ? (
+            <div className="mt-4">
+              <p className="brand-mark text-2xl text-[var(--ink)]">
+                {upcomingFromSelf.lines.map((l) => l.name).join(", ")}
+              </p>
+              <p className="mt-2 text-sm text-[var(--ink-soft)]">
+                {upcomingFromSelf.scheduledAt
+                  ? formatDateTime(upcomingFromSelf.scheduledAt)
+                  : ""}
+                {upcomingFromSelf.post
+                  ? ` · ${upcomingFromSelf.post.name}`
+                  : ""}
+              </p>
+              <p className="mt-1 text-sm text-[var(--ink-soft)]">
+                {upcomingFromSelf.vehicle.make} {upcomingFromSelf.vehicle.model}{" "}
+                · {upcomingFromSelf.vehicle.plate}
+              </p>
+              <div className="mt-4">
+                <StatusPill tone={workOrderStatusTone(upcomingFromSelf.status)}>
+                  {workOrderStatusLabel[upcomingFromSelf.status]}
+                </StatusPill>
+              </div>
+            </div>
+          ) : nextBooking ? (
             <div className="mt-4">
               <p className="brand-mark text-2xl text-[var(--ink)]">
                 {nextBooking.serviceName}
@@ -76,9 +125,17 @@ export default async function ClientCabinetPage() {
               </div>
             </div>
           ) : (
-            <p className="mt-4 text-sm text-[var(--ink-soft)]">
-              Активных записей нет. Онлайн-запись появится в следующем этапе.
-            </p>
+            <div className="mt-4">
+              <p className="text-sm text-[var(--ink-soft)]">
+                Активных записей нет.
+              </p>
+              <Link
+                href="/client/book"
+                className="mt-3 inline-block text-sm font-semibold text-[var(--accent)] hover:text-[var(--accent-deep)]"
+              >
+                Записаться онлайн →
+              </Link>
+            </div>
           )}
         </section>
 
