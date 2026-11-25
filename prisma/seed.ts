@@ -10,6 +10,9 @@ import {
 const prisma = new PrismaClient();
 
 async function main() {
+  await prisma.stockMovement.deleteMany();
+  await prisma.serviceFluidNorm.deleteMany();
+  await prisma.fluidSku.deleteMany();
   await prisma.staffShift.deleteMany();
   await prisma.postAssignment.deleteMany();
   await prisma.staffProfile.deleteMany();
@@ -196,6 +199,139 @@ async function main() {
       }),
     ),
   );
+
+  // Склад техжидкостей + нормы расхода на услуги
+  const shampoo = await prisma.fluidSku.create({
+    data: {
+      organizationId: org.id,
+      name: "Шампунь активный",
+      unit: "л",
+      skuCode: "SH-01",
+      quantityOnHand: 40,
+    },
+  });
+  const wax = await prisma.fluidSku.create({
+    data: {
+      organizationId: org.id,
+      name: "Воск холодный",
+      unit: "л",
+      skuCode: "WX-02",
+      quantityOnHand: 18,
+    },
+  });
+  const engineCleaner = await prisma.fluidSku.create({
+    data: {
+      organizationId: org.id,
+      name: "Очиститель двигателя",
+      unit: "л",
+      skuCode: "EN-03",
+      quantityOnHand: 12,
+    },
+  });
+  const polish = await prisma.fluidSku.create({
+    data: {
+      organizationId: org.id,
+      name: "Полироль кузова",
+      unit: "мл",
+      skuCode: "PL-04",
+      quantityOnHand: 2500,
+    },
+  });
+
+  const svcByName = Object.fromEntries(services.map((s) => [s.name, s]));
+  await prisma.serviceFluidNorm.createMany({
+    data: [
+      {
+        organizationId: org.id,
+        serviceId: svcByName["Экспресс-мойка"].id,
+        fluidSkuId: shampoo.id,
+        quantityPerUnit: 0.05,
+      },
+      {
+        organizationId: org.id,
+        serviceId: svcByName["Комплексная мойка"].id,
+        fluidSkuId: shampoo.id,
+        quantityPerUnit: 0.12,
+      },
+      {
+        organizationId: org.id,
+        serviceId: svcByName["Комплексная мойка"].id,
+        fluidSkuId: wax.id,
+        quantityPerUnit: 0.04,
+      },
+      {
+        organizationId: org.id,
+        serviceId: svcByName["Мойка двигателя"].id,
+        fluidSkuId: engineCleaner.id,
+        quantityPerUnit: 0.25,
+      },
+      {
+        organizationId: org.id,
+        serviceId: svcByName["Полировка кузова"].id,
+        fluidSkuId: polish.id,
+        quantityPerUnit: 80,
+      },
+    ],
+  });
+
+  await prisma.stockMovement.createMany({
+    data: [
+      {
+        organizationId: org.id,
+        fluidSkuId: shampoo.id,
+        type: "RECEIPT",
+        quantityDelta: 40,
+        quantityAfter: 40,
+        note: "Начальный остаток (демо)",
+        createdById: owner.id,
+      },
+      {
+        organizationId: org.id,
+        fluidSkuId: wax.id,
+        type: "RECEIPT",
+        quantityDelta: 20,
+        quantityAfter: 20,
+        note: "Начальный остаток (демо)",
+        createdById: owner.id,
+      },
+      {
+        organizationId: org.id,
+        fluidSkuId: wax.id,
+        type: "CONSUMPTION",
+        quantityDelta: -2,
+        quantityAfter: 18,
+        note: "Ручной расход за смену",
+        createdById: admin.id,
+      },
+      {
+        organizationId: org.id,
+        fluidSkuId: engineCleaner.id,
+        type: "RECEIPT",
+        quantityDelta: 12,
+        quantityAfter: 12,
+        note: "Начальный остаток (демо)",
+        createdById: owner.id,
+      },
+      {
+        organizationId: org.id,
+        fluidSkuId: polish.id,
+        type: "RECEIPT",
+        quantityDelta: 2500,
+        quantityAfter: 2500,
+        note: "Начальный остаток (демо)",
+        createdById: owner.id,
+      },
+      {
+        organizationId: org.id,
+        fluidSkuId: shampoo.id,
+        type: "INVENTORY",
+        quantityDelta: 0,
+        quantityAfter: 40,
+        note: "Инвентаризация — совпало с учётом",
+        createdById: admin.id,
+      },
+    ],
+  });
 
   const now = new Date();
   const today = new Date(now);

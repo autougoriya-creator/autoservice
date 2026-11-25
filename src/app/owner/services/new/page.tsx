@@ -18,7 +18,7 @@ export default async function NewServicePage() {
       <SectionTitle
         eyebrow="Справочник"
         title="Новая услуга"
-        description="Цена в рублях, длительность в минутах."
+        description="Цена в рублях, норма времени в минутах. Нормы расхода техжидкостей — после сохранения."
       />
 
       <FormCard>
@@ -41,7 +41,7 @@ export default async function NewServicePage() {
                 defaultValue="1000"
               />
             </Field>
-            <Field label="Длительность, мин" htmlFor="durationMin">
+            <Field label="Норма времени, мин" htmlFor="durationMin">
               <TextInput
                 id="durationMin"
                 name="durationMin"

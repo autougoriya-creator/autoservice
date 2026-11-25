@@ -20,7 +20,7 @@ export default async function ServicesPage() {
       <SectionTitle
         eyebrow="Справочник"
         title="Услуги"
-        description="Прайс точки: название, цена и длительность. Используются в заказ-нарядах."
+        description="Прайс точки: цена, норма времени и нормы расхода техжидкостей."
       />
 
       <Toolbar>
@@ -34,7 +34,7 @@ export default async function ServicesPage() {
           description="Добавьте услуги мойки и детейлинга в прайс."
         />
       ) : (
-        <DataTable headers={["Услуга", "Цена", "Длительность", "Статус", ""]}>
+        <DataTable headers={["Услуга", "Цена", "Норма времени", "Статус", ""]}>
           {services.map((s) => (
             <tr key={s.id}>
               <td className="px-4 py-3 font-medium text-[var(--ink)]">

@@ -27,6 +27,7 @@ export default async function OwnerDashboardPage() {
     customersCount,
     servicesCount,
     openWorkOrders,
+    fluidSkuCount,
     recentWorkOrders,
   ] = await Promise.all([
     prisma.customer.count({ where: { organizationId: orgId } }),
@@ -38,6 +39,9 @@ export default async function OwnerDashboardPage() {
           in: ["NEW", "NEW_FROM_CLIENT", "CONFIRMED", "IN_PROGRESS"],
         },
       },
+    }),
+    prisma.fluidSku.count({
+      where: { organizationId: orgId, isActive: true },
     }),
     prisma.workOrder.findMany({
       where: { organizationId: orgId },
@@ -55,13 +59,18 @@ export default async function OwnerDashboardPage() {
         description={`Добро пожаловать, ${session.name}. Справочники, заказ-наряды и текущая загрузка.`}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Metric label="Клиенты" value={String(customersCount)} href="/owner/clients" />
         <Metric label="Услуги в прайсе" value={String(servicesCount)} href="/owner/services" />
         <Metric
           label="Активные заказ-наряды"
           value={String(openWorkOrders)}
           href="/owner/work-orders"
+        />
+        <Metric
+          label="Склад (SKU)"
+          value={String(fluidSkuCount)}
+          href="/owner/warehouse"
         />
         <Metric label="Рабочий стол" value="→" href="/owner/desk" />
         {owner ? (

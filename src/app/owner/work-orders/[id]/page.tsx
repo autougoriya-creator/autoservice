@@ -182,6 +182,21 @@ export default async function WorkOrderDetailPage({
                 ))}
               </TextSelect>
             </Field>
+            <label className="flex items-start gap-2 text-sm text-[var(--ink)]">
+              <input
+                type="checkbox"
+                name="writeOffByNorms"
+                value="1"
+                defaultChecked
+                className="mt-1"
+              />
+              <span>
+                При закрытии списать техжидкости по нормам услуг
+                <span className="mt-0.5 block text-xs text-[var(--ink-soft)]">
+                  Если у услуг заданы нормы расхода на складе.
+                </span>
+              </span>
+            </label>
             <p className="text-xs text-[var(--ink-soft)]">
               Закрытие заказ-наряда возможно только с указанием вида оплаты.
             </p>
