@@ -54,23 +54,26 @@ export default async function StaffPage() {
       <SectionTitle
         eyebrow="Персонал"
         title="Сотрудники и оплата"
-        description="Мойщики и слесари: режим оплаты (сделка % или оклад) и закрепление за постом."
+        description="Мойщики и слесари: режим оплаты (сделка % или оклад). На одном посту может быть несколько исполнителей — доли в карточке поста."
       />
 
       <Toolbar>
         <p className="text-sm text-[var(--ink-soft)]">
           Профилей: {profiles.length}
         </p>
+        <ButtonLink href="/owner/posts" variant="ghost">
+          Посты и доли
+        </ButtonLink>
         <ButtonLink href="/owner/schedule" variant="ghost">
           График смен
         </ButtonLink>
       </Toolbar>
 
       <DataTable
-        headers={["Сотрудник", "Должность", "Оплата", "Пост", ""]}
+        headers={["Сотрудник", "Должность", "Оплата", "Посты", ""]}
       >
         {profiles.map((p) => {
-          const assignment = assignments.find(
+          const myAssignments = assignments.filter(
             (a) => a.staffProfileId === p.id,
           );
           return (
@@ -87,11 +90,15 @@ export default async function StaffPage() {
                 <p className="mt-1 text-xs text-[var(--ink-soft)]">
                   {p.payMode === "SALARY"
                     ? formatRub(p.salaryRub) + " / мес"
-                    : `${p.dealPercent}% от ЗН`}
+                    : `${p.dealPercent}% от доли поста`}
                 </p>
               </td>
               <td className="px-4 py-3 text-[var(--ink-soft)]">
-                {assignment?.post.name ?? "—"}
+                {myAssignments.length === 0
+                  ? "—"
+                  : myAssignments
+                      .map((a) => `${a.post.name} (${a.sharePercent}%)`)
+                      .join(", ")}
               </td>
               <td className="px-4 py-3 text-right">
                 <Link
@@ -166,6 +173,13 @@ export default async function StaffPage() {
 
         <FormCard>
           <h2 className="brand-mark mb-4 text-lg">Закрепить за постом</h2>
+          <p className="mb-3 text-xs text-[var(--ink-soft)]">
+            На пост можно назначить нескольких. Доли % удобнее править в{" "}
+            <Link href="/owner/posts" className="font-semibold text-[var(--accent)]">
+              карточках постов
+            </Link>
+            .
+          </p>
           <form action={assignStaffToPost} className="space-y-4">
             <Field label="Пост" htmlFor="postId">
               <TextSelect id="postId" name="postId" required>
@@ -199,7 +213,10 @@ export default async function StaffPage() {
                 className="flex items-center justify-between gap-3 rounded-lg bg-[var(--paper)] px-3 py-2 text-sm"
               >
                 <span>
-                  <strong>{a.post.name}</strong> → {a.staffProfile.user.name}
+                  <strong>{a.post.name}</strong> → {a.staffProfile.user.name}{" "}
+                  <span className="text-[var(--ink-soft)]">
+                    ({a.sharePercent}%)
+                  </span>
                 </span>
                 <form action={clearPostAssignment}>
                   <input type="hidden" name="id" value={a.id} />

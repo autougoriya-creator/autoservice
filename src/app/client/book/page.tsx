@@ -135,7 +135,12 @@ export default async function ClientBookPage() {
             priceRub: p.priceRub,
           })),
         }))}
-        posts={posts.map((p) => ({ id: p.id, name: p.name }))}
+        posts={posts.map((p) => ({
+          id: p.id,
+          name: p.name,
+          workStartHour: p.workStartHour,
+          workEndHour: p.workEndHour,
+        }))}
         busy={busy}
       />
     </div>

@@ -146,7 +146,12 @@ export default async function ManagerDeskPage({
       ) : (
         <InteractiveDesk
           dayIso={dayStart.toISOString()}
-          posts={posts.map((p) => ({ id: p.id, name: p.name }))}
+          posts={posts.map((p) => ({
+            id: p.id,
+            name: p.name,
+            workStartHour: p.workStartHour,
+            workEndHour: p.workEndHour,
+          }))}
           initialBlocks={blocks.map(toDeskBlock)}
           customers={customers}
           services={services}

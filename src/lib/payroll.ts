@@ -49,10 +49,70 @@ export function dealCostForRevenue(revenueRub: number, dealPercent: number) {
   return Math.round((revenueRub * dealPercent) / 100);
 }
 
+/** Доля выручки поста, приходящаяся на исполнителя. */
+export function attributedRevenue(revenueRub: number, sharePercent: number) {
+  if (revenueRub <= 0 || sharePercent <= 0) return 0;
+  return Math.round((revenueRub * Math.min(100, sharePercent)) / 100);
+}
+
+/**
+ * Сделка на посту с учётом доли: выручка × доля% × % сделки.
+ * При одном исполнителе с долей 100% — как обычная сделка.
+ */
+export function dealCostForPostShare(
+  revenueRub: number,
+  sharePercent: number,
+  dealPercent: number,
+) {
+  return dealCostForRevenue(
+    attributedRevenue(revenueRub, sharePercent),
+    dealPercent,
+  );
+}
+
+/** Равномерные доли на N исполнителей (сумма = 100). */
+export function equalSharePercents(count: number): number[] {
+  if (count <= 0) return [];
+  if (count === 1) return [100];
+  const base = Math.floor(100 / count);
+  const shares = Array.from({ length: count }, () => base);
+  let rem = 100 - base * count;
+  for (let i = 0; rem > 0; i++, rem--) {
+    shares[i] += 1;
+  }
+  return shares;
+}
+
 export function sumWorkOrderRevenue(
   workOrders: { lines: { priceRub: number; quantity: number }[] }[],
 ) {
   return workOrders.reduce((sum, wo) => sum + workOrderTotal(wo.lines), 0);
+}
+
+/** Подпись часов работы поста, напр. «08:00–20:00». */
+export function formatPostHours(workStartHour: number, workEndHour: number) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(workStartHour)}:00–${pad(workEndHour)}:00`;
+}
+
+export function clampPostHours(startHour: number, endHour: number) {
+  const start = Math.max(0, Math.min(23, Math.round(startHour)));
+  const end = Math.max(start + 1, Math.min(24, Math.round(endHour)));
+  return { workStartHour: start, workEndHour: end };
+}
+
+/** Интервал [startsAt, startsAt+duration) внутри часов поста. */
+export function isWithinPostHours(
+  startsAt: Date,
+  durationMin: number,
+  workStartHour: number,
+  workEndHour: number,
+) {
+  const startMin = startsAt.getHours() * 60 + startsAt.getMinutes();
+  const endMin = startMin + Math.max(0, durationMin);
+  return (
+    startMin >= workStartHour * 60 && endMin <= workEndHour * 60
+  );
 }
 
 export type PeriodKey = "day" | "week";

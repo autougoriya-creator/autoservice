@@ -82,7 +82,7 @@ export default async function PnLPage({
                 : row.staff
                     .map(
                       (s) =>
-                        `${s.name} (${s.payMode === "SALARY" ? "оклад" : "сделка"} ${formatRub(s.cost)})`,
+                        `${s.name} · доля ${s.sharePercent}% (${s.payMode === "SALARY" ? "оклад" : "сделка"} ${formatRub(s.cost)})`,
                     )
                     .join("; ")}
             </td>
@@ -91,8 +91,9 @@ export default async function PnLPage({
       </DataTable>
 
       <p className="text-xs text-[var(--ink-soft)]">
-        Сделка: % от выручки заказ-нарядов поста за период. Оклад: доля месячной
-        ЗП пропорционально дням смен (база 30 дней). Учёт упрощённый — для MVP.
+        Сделка: % от доли выручки поста (доля исполнителя × % сделки). При
+        нескольких мойщиках на посту доли задаются в карточке поста. Оклад:
+        доля месячной ЗП пропорционально дням смен (база 30 дней).
       </p>
     </div>
   );

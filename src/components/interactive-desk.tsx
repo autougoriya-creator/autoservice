@@ -39,7 +39,12 @@ import { phoneDigits } from "@/lib/phone";
 import { selectableWorkOrderStatuses } from "@/lib/work-order";
 import type { WorkOrderStatus } from "@prisma/client";
 
-type Post = { id: string; name: string };
+type Post = {
+  id: string;
+  name: string;
+  workStartHour?: number;
+  workEndHour?: number;
+};
 type VehicleOpt = {
   id: string;
   make: string;
@@ -429,7 +434,10 @@ export function InteractiveDesk({
             style={{ gridTemplateColumns: "168px 1fr" }}
           >
             <div className="px-3 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-soft)]">
-              Пост · {hourLabel(BOARD_START_HOUR)}–{hourLabel(BOARD_END_HOUR)}
+              Пост
+              <span className="mt-0.5 block font-normal normal-case tracking-normal text-[10px]">
+                часы у каждого свои
+              </span>
             </div>
             <div
               className="grid"
@@ -450,6 +458,18 @@ export function InteractiveDesk({
 
           {posts.map((post) => {
             const rowBlocks = displayBlocks.filter((b) => b.postId === post.id);
+            const postStart = post.workStartHour ?? BOARD_START_HOUR;
+            const postEnd = post.workEndHour ?? BOARD_END_HOUR;
+            const muteLeftPct = Math.max(
+              0,
+              ((postStart - BOARD_START_HOUR) / (BOARD_END_HOUR - BOARD_START_HOUR)) *
+                100,
+            );
+            const muteRightPct = Math.max(
+              0,
+              ((BOARD_END_HOUR - postEnd) / (BOARD_END_HOUR - BOARD_START_HOUR)) *
+                100,
+            );
             return (
               <div
                 key={post.id}
@@ -458,6 +478,9 @@ export function InteractiveDesk({
               >
                 <div className="flex flex-col justify-center gap-1 border-r border-[var(--line)] bg-[var(--paper)]/40 px-3 py-4">
                   <p className="font-semibold text-[var(--ink)]">{post.name}</p>
+                  <p className="text-xs font-medium text-[var(--teal)]">
+                    {hourLabel(postStart)}–{hourLabel(postEnd)}
+                  </p>
                   <p className="text-xs text-[var(--ink-soft)]">
                     {rowBlocks.length === 0
                       ? "Свободен"
@@ -486,6 +509,20 @@ export function InteractiveDesk({
                       />
                     ))}
                   </div>
+                  {muteLeftPct > 0 ? (
+                    <div
+                      className="pointer-events-none absolute inset-y-0 left-0 bg-[var(--ink)]/6"
+                      style={{ width: `${muteLeftPct}%` }}
+                      aria-hidden
+                    />
+                  ) : null}
+                  {muteRightPct > 0 ? (
+                    <div
+                      className="pointer-events-none absolute inset-y-0 right-0 bg-[var(--ink)]/6"
+                      style={{ width: `${muteRightPct}%` }}
+                      aria-hidden
+                    />
+                  ) : null}
 
                   {rowBlocks.map((block) => {
                     const offset = clampBoardMinutes(

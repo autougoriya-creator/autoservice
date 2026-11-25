@@ -85,7 +85,7 @@ export default async function MyWorkPage({
           ) : (
             openAssignments.map((a) => (
               <StatusPill key={a.id} tone="ok">
-                {a.post.name}
+                {a.post.name} · доля {a.sharePercent}%
               </StatusPill>
             ))
           )}
@@ -119,7 +119,7 @@ export default async function MyWorkPage({
           <p className="mt-2 text-xs text-[var(--ink-soft)]">
             {profile.payMode === "SALARY"
               ? "Доля оклада по дням смен в периоде"
-              : `% от выручки заказ-нарядов на закреплённых постах`}
+              : `${profile.dealPercent}% от вашей доли выручки на постах`}
           </p>
         </div>
       </div>

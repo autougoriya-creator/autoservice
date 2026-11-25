@@ -98,16 +98,22 @@ async function main() {
     ],
   });
 
+  const postHours = [
+    { name: "Пост 1 — мойка", workStartHour: 8, workEndHour: 20 },
+    { name: "Пост 2 — мойка", workStartHour: 10, workEndHour: 18 },
+    { name: "Пост 3 — детейлинг", workStartHour: 9, workEndHour: 19 },
+  ];
   const posts = await Promise.all(
-    ["Пост 1 — мойка", "Пост 2 — мойка", "Пост 3 — детейлинг"].map(
-      (name, index) =>
-        prisma.servicePost.create({
-          data: {
-            name,
-            sortOrder: index + 1,
-            organizationId: org.id,
-          },
-        }),
+    postHours.map((cfg, index) =>
+      prisma.servicePost.create({
+        data: {
+          name: cfg.name,
+          sortOrder: index + 1,
+          organizationId: org.id,
+          workStartHour: cfg.workStartHour,
+          workEndHour: cfg.workEndHour,
+        },
+      }),
     ),
   );
 
@@ -746,22 +752,32 @@ async function main() {
     },
   });
 
+  // Пост 1: два мойщика с долями 60% / 40%; пост 2 — Павел; пост 3 — слесарь
   await prisma.postAssignment.createMany({
     data: [
       {
         organizationId: org.id,
         postId: posts[0].id,
         staffProfileId: profileSergey.id,
+        sharePercent: 60,
+      },
+      {
+        organizationId: org.id,
+        postId: posts[0].id,
+        staffProfileId: profilePavel.id,
+        sharePercent: 40,
       },
       {
         organizationId: org.id,
         postId: posts[1].id,
         staffProfileId: profilePavel.id,
+        sharePercent: 100,
       },
       {
         organizationId: org.id,
         postId: posts[2].id,
         staffProfileId: profileDmitry.id,
+        sharePercent: 100,
       },
     ],
   });
