@@ -451,6 +451,10 @@ model WorkOrder {
   notes          String?
   /// Вид оплаты при закрытии
   paymentMethod  PaymentMethod?
+  /// Сумма налом (для CASH_AND_TERMINAL — доля в кассу)
+  cashPaidRub    Int?
+  /// Сумма по терминалу (для CASH_AND_TERMINAL — доля терминала)
+  terminalPaidRub Int?
   paidAt         DateTime?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt

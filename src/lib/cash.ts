@@ -19,6 +19,32 @@ function dayBounds(anchor: Date) {
   return { start, end };
 }
 
+function cashShare(
+  method: PaymentMethodKey,
+  totalRub: number,
+  cashPaidRub: number | null,
+  terminalPaidRub: number | null,
+) {
+  if (method === "CASH") return totalRub;
+  if (method === "CASH_AND_TERMINAL") {
+    return cashPaidRub ?? 0;
+  }
+  return 0;
+}
+
+function terminalShare(
+  method: PaymentMethodKey,
+  totalRub: number,
+  cashPaidRub: number | null,
+  terminalPaidRub: number | null,
+) {
+  if (method === "TERMINAL") return totalRub;
+  if (method === "CASH_AND_TERMINAL") {
+    return terminalPaidRub ?? 0;
+  }
+  return 0;
+}
+
 /** Сводка кассы за день: закрытые заказ-наряды с оплатой. */
 export async function buildDailyCashSummary(
   organizationId: string,
@@ -56,14 +82,33 @@ export async function buildDailyCashSummary(
   };
 
   let totalRub = 0;
+  let cashDrawerRub = 0;
+  let terminalSettledRub = 0;
+
   const rows = payments.map((wo) => {
     const amount = workOrderTotal(wo.lines);
     const method = String(wo.paymentMethod) as PaymentMethodKey;
+    const cashRub = cashShare(
+      method,
+      amount,
+      wo.cashPaidRub,
+      wo.terminalPaidRub,
+    );
+    const terminalRub = terminalShare(
+      method,
+      amount,
+      wo.cashPaidRub,
+      wo.terminalPaidRub,
+    );
+
     if (byMethod[method]) {
       byMethod[method].count += 1;
       byMethod[method].totalRub += amount;
     }
     totalRub += amount;
+    cashDrawerRub += cashRub;
+    terminalSettledRub += terminalRub;
+
     return {
       id: wo.id,
       number: wo.number,
@@ -72,6 +117,8 @@ export async function buildDailyCashSummary(
       vehiclePlate: wo.vehicle.plate,
       paymentMethod: method,
       amountRub: amount,
+      cashPaidRub: cashRub || null,
+      terminalPaidRub: terminalRub || null,
       paidAt: (wo.paidAt ?? wo.completedAt) as Date,
     };
   });
@@ -80,6 +127,8 @@ export async function buildDailyCashSummary(
     start,
     end,
     totalRub,
+    cashDrawerRub,
+    terminalSettledRub,
     count: rows.length,
     byMethod,
     rows,
