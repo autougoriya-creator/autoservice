@@ -109,6 +109,10 @@ model ServicePost {
   name           String
   sortOrder      Int      @default(0)
   isActive       Boolean  @default(true)
+  /// Час начала работы поста (локально, 0–23)
+  workStartHour  Int      @default(8)
+  /// Час окончания работы поста (локально, 1–24, не включая)
+  workEndHour    Int      @default(20)
   organizationId String
   createdAt      DateTime @default(now())
 
@@ -143,12 +147,14 @@ model StaffProfile {
   @@index([organizationId])
 }
 
-/// Закрепление сотрудника за постом
+/// Закрепление сотрудника за постом (на посту может быть несколько мойщиков)
 model PostAssignment {
   id             String    @id @default(cuid())
   organizationId String
   postId         String
   staffProfileId String
+  /// Доля вознаграждения на посту, % (при нескольких исполнителях; сумма по посту ≈ 100)
+  sharePercent   Int       @default(100)
   activeFrom     DateTime  @default(now())
   activeTo       DateTime?
   createdAt      DateTime  @default(now())

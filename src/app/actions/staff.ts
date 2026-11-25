@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { equalSharePercents } from "@/lib/payroll";
 import {
   orgIdOf,
   requireManagementSession,
@@ -73,7 +74,7 @@ export async function upsertStaffProfile(formData: FormData) {
 }
 
 export async function assignStaffToPost(formData: FormData) {
-  const session = await requireOwnerSession();
+  const session = await requireManagementSession();
   const organizationId = orgIdOf(session);
   const postId = str(formData, "postId");
   const staffProfileId = str(formData, "staffProfileId");
@@ -97,24 +98,62 @@ export async function assignStaffToPost(formData: FormData) {
   });
 
   await prisma.postAssignment.create({
-    data: { organizationId, postId, staffProfileId },
+    data: { organizationId, postId, staffProfileId, sharePercent: 100 },
   });
 
+  const open = await prisma.postAssignment.findMany({
+    where: { organizationId, postId, activeTo: null },
+    orderBy: { createdAt: "asc" },
+  });
+  const shares = equalSharePercents(open.length);
+  await Promise.all(
+    open.map((a, i) =>
+      prisma.postAssignment.update({
+        where: { id: a.id },
+        data: { sharePercent: shares[i] },
+      }),
+    ),
+  );
+
   revalidatePath("/owner/staff");
+  revalidatePath("/owner/posts");
   revalidatePath("/owner/schedule");
   revalidatePath("/owner/pnl");
   redirect("/owner/staff");
 }
 
 export async function clearPostAssignment(formData: FormData) {
-  const session = await requireOwnerSession();
+  const session = await requireManagementSession();
   const organizationId = orgIdOf(session);
   const id = str(formData, "id");
+  const assignment = await prisma.postAssignment.findFirst({
+    where: { id, organizationId, activeTo: null },
+  });
   await prisma.postAssignment.updateMany({
     where: { id, organizationId, activeTo: null },
     data: { activeTo: new Date() },
   });
+  if (assignment) {
+    const open = await prisma.postAssignment.findMany({
+      where: {
+        organizationId,
+        postId: assignment.postId,
+        activeTo: null,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    const shares = equalSharePercents(open.length);
+    await Promise.all(
+      open.map((a, i) =>
+        prisma.postAssignment.update({
+          where: { id: a.id },
+          data: { sharePercent: shares[i] },
+        }),
+      ),
+    );
+  }
   revalidatePath("/owner/staff");
+  revalidatePath("/owner/posts");
   revalidatePath("/owner/pnl");
   redirect("/owner/staff");
 }

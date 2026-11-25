@@ -10,8 +10,28 @@ import {
   type PlannedLineInput,
 } from "@/lib/booking-plan";
 import { normalizePhone } from "@/lib/phone";
+import { isWithinPostHours } from "@/lib/payroll";
 import { orgIdOf, requireManagementSession } from "@/lib/tenant";
 import { canTransitionWorkOrderStatus } from "@/lib/work-order";
+
+function postHoursError(
+  startsAt: Date,
+  durationMin: number,
+  post: { workStartHour: number; workEndHour: number; name: string },
+) {
+  if (
+    isWithinPostHours(
+      startsAt,
+      durationMin,
+      post.workStartHour,
+      post.workEndHour,
+    )
+  ) {
+    return null;
+  }
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `Время вне графика «${post.name}» (${pad(post.workStartHour)}:00–${pad(post.workEndHour)}:00)`;
+}
 
 function revalidateDesk() {
   revalidatePath("/owner/desk");
@@ -44,24 +64,35 @@ export async function moveDeskItem(input: {
     if (!post) return { ok: false, error: "Пост не найден" };
 
     if (input.kind === "booking") {
+      const existing = await prisma.booking.findFirst({
+        where: { id: input.id, organizationId },
+        select: { durationMin: true },
+      });
+      if (!existing) return { ok: false, error: "Запись не найдена" };
       const data: {
         postId: string;
         startsAt: Date;
         durationMin?: number;
       } = { postId: input.postId, startsAt };
+      let durationMin = existing.durationMin;
       if (
         typeof input.durationMin === "number" &&
         input.durationMin >= 15 &&
         input.durationMin <= 480
       ) {
         data.durationMin = Math.round(input.durationMin / 15) * 15;
+        durationMin = data.durationMin;
       }
+      const hoursErr = postHoursError(startsAt, durationMin, post);
+      if (hoursErr) return { ok: false, error: hoursErr };
       const updated = await prisma.booking.updateMany({
         where: { id: input.id, organizationId },
         data,
       });
       if (updated.count === 0) return { ok: false, error: "Запись не найдена" };
     } else {
+      const hoursErr = postHoursError(startsAt, 60, post);
+      if (hoursErr) return { ok: false, error: hoursErr };
       const updated = await prisma.workOrder.updateMany({
         where: { id: input.id, organizationId },
         data: { postId: input.postId, scheduledAt: startsAt },
@@ -107,6 +138,11 @@ export async function updateDeskBooking(input: {
     });
     if (!existing) return { ok: false, error: "Запись не найдена" };
 
+    const post = await prisma.servicePost.findFirst({
+      where: { id: input.postId, organizationId, isActive: true },
+    });
+    if (!post) return { ok: false, error: "Пост не найден" };
+
     const lines = input.lines ? normalizePlannedLines(input.lines) : null;
     const catalogTotal = lines ? bookingLinesTotal(lines) : null;
     const durationMin = Math.max(
@@ -120,6 +156,8 @@ export async function updateDeskBooking(input: {
         ) * 15,
       ),
     );
+    const hoursErr = postHoursError(startsAt, durationMin, post);
+    if (hoursErr) return { ok: false, error: hoursErr };
     const plannedAmountRub =
       typeof input.plannedAmountRub === "number"
         ? Math.max(0, Math.round(input.plannedAmountRub))
@@ -204,6 +242,12 @@ export async function updateDeskWorkOrder(input: {
     if (!current) {
       return { ok: false, error: "Заказ-наряд не найден" };
     }
+    const post = await prisma.servicePost.findFirst({
+      where: { id: input.postId, organizationId, isActive: true },
+    });
+    if (!post) return { ok: false, error: "Пост не найден" };
+    const hoursErr = postHoursError(startsAt, 60, post);
+    if (hoursErr) return { ok: false, error: hoursErr };
     const nextStatus = input.status as
       | "NEW"
       | "NEW_FROM_CLIENT"
@@ -337,6 +381,8 @@ export async function createDeskBooking(input: {
         ) * 15,
       ),
     );
+    const hoursErr = postHoursError(startsAt, durationMin, post);
+    if (hoursErr) return { ok: false, error: hoursErr };
     const serviceName = summarizeServiceNames(lines);
 
     const booking = await prisma.booking.create({

@@ -43,11 +43,14 @@ export function LoadBoardGrid({
   posts,
   blocks,
 }: {
-  posts: { id: string; name: string }[];
+  posts: {
+    id: string;
+    name: string;
+    workStartHour?: number;
+    workEndHour?: number;
+  }[];
   blocks: BoardBlock[];
 }) {
-  const windowLabel = `${hourLabel(BOARD_START_HOUR)}–${hourLabel(BOARD_END_HOUR)}`;
-
   return (
     <div className="overflow-x-auto rounded-xl border border-[var(--line)] bg-white/90 shadow-[var(--shadow)]">
       <div className="min-w-[920px]">
@@ -56,7 +59,7 @@ export function LoadBoardGrid({
           style={{ gridTemplateColumns: "168px 1fr" }}
         >
           <div className="px-3 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-soft)]">
-            Пост · {windowLabel}
+            Пост
           </div>
           <div
             className="grid"
@@ -75,6 +78,8 @@ export function LoadBoardGrid({
 
         {posts.map((post) => {
           const rowBlocks = blocks.filter((b) => b.postId === post.id);
+          const postStart = post.workStartHour ?? BOARD_START_HOUR;
+          const postEnd = post.workEndHour ?? BOARD_END_HOUR;
           return (
             <div
               key={post.id}
@@ -83,6 +88,9 @@ export function LoadBoardGrid({
             >
               <div className="flex flex-col justify-center gap-1 border-r border-[var(--line)] bg-[var(--paper)]/40 px-3 py-4">
                 <p className="font-semibold text-[var(--ink)]">{post.name}</p>
+                <p className="text-xs font-medium text-[var(--teal)]">
+                  {hourLabel(postStart)}–{hourLabel(postEnd)}
+                </p>
                 <p className="text-xs text-[var(--ink-soft)]">
                   {rowBlocks.length === 0
                     ? "Свободен"

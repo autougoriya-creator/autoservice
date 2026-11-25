@@ -5,11 +5,8 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { orgIdOf } from "@/lib/tenant";
 import { prisma } from "@/lib/prisma";
-import {
-  BOARD_END_HOUR,
-  BOARD_SNAP_MIN,
-  BOARD_START_HOUR,
-} from "@/lib/load-board";
+import { BOARD_SNAP_MIN } from "@/lib/load-board";
+import { isWithinPostHours } from "@/lib/payroll";
 import { resolveServicePriceRub } from "@/lib/pricing";
 
 function str(formData: FormData, key: string) {
@@ -44,11 +41,6 @@ export async function createClientSelfBooking(formData: FormData) {
   }
 
   const minutes = startsAt.getHours() * 60 + startsAt.getMinutes();
-  const dayStart = BOARD_START_HOUR * 60;
-  const dayEnd = BOARD_END_HOUR * 60;
-  if (minutes < dayStart || minutes >= dayEnd) {
-    throw new Error("Запись доступна с 08:00 до 20:00");
-  }
   if (minutes % BOARD_SNAP_MIN !== 0) {
     throw new Error("Время записи должно быть кратно 15 минутам");
   }
@@ -85,6 +77,20 @@ export async function createClientSelfBooking(formData: FormData) {
   if (!vehicle) throw new Error("Автомобиль не найден");
   if (!service) throw new Error("Услуга не найдена");
   if (!post) throw new Error("Нет свободных постов");
+
+  if (
+    !isWithinPostHours(
+      startsAt,
+      service.durationMin,
+      post.workStartHour,
+      post.workEndHour,
+    )
+  ) {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    throw new Error(
+      `Запись на «${post.name}» доступна с ${pad(post.workStartHour)}:00 до ${pad(post.workEndHour)}:00`,
+    );
+  }
 
   const updated = await prisma.organization.update({
     where: { id: organizationId },

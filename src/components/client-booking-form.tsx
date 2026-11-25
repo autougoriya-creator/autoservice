@@ -32,7 +32,12 @@ type ServiceOption = {
   classPrices: { vehicleClassId: string; priceRub: number }[];
 };
 
-type PostOption = { id: string; name: string };
+type PostOption = {
+  id: string;
+  name: string;
+  workStartHour?: number;
+  workEndHour?: number;
+};
 
 type BusyPayload = {
   startsAtIso: string;

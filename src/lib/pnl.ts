@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import {
+  dealCostForPostShare,
   dealCostForRevenue,
   periodBounds,
   salaryCostForPeriod,
@@ -59,19 +60,19 @@ export async function buildPostPnL(
   const rows = posts.map((post) => {
     const postWOs = periodWorkOrders.filter((wo) => wo.postId === post.id);
     const revenue = sumWorkOrderRevenue(postWOs);
-    const staffOnPost = activeAssignments
-      .filter((a) => a.postId === post.id)
-      .map((a) => a.staffProfile);
+    const postAssignments = activeAssignments.filter((a) => a.postId === post.id);
 
     let payroll = 0;
     const staffBreakdown: {
       name: string;
       title: string;
       payMode: string;
+      sharePercent: number;
       cost: number;
     }[] = [];
 
-    for (const profile of staffOnPost) {
+    for (const assignment of postAssignments) {
+      const profile = assignment.staffProfile;
       const staffShifts = periodShifts.filter(
         (s) =>
           s.staffProfileId === profile.id &&
@@ -82,13 +83,18 @@ export async function buildPostPnL(
         const days = uniqueShiftDays(staffShifts, start, end);
         cost = salaryCostForPeriod(profile.salaryRub, days || (staffShifts.length ? 1 : 0));
       } else {
-        cost = dealCostForRevenue(revenue, profile.dealPercent);
+        cost = dealCostForPostShare(
+          revenue,
+          assignment.sharePercent,
+          profile.dealPercent,
+        );
       }
       payroll += cost;
       staffBreakdown.push({
         name: profile.user.name,
         title: profile.title,
         payMode: String(profile.payMode),
+        sharePercent: assignment.sharePercent,
         cost,
       });
     }
@@ -139,6 +145,9 @@ export async function buildStaffPayrollEstimate(
 
   const openAssignments = profile.assignments.filter((a) => a.activeTo == null);
   const postIds = openAssignments.map((a) => a.postId);
+  const shareByPost = new Map(
+    openAssignments.map((a) => [a.postId, a.sharePercent] as const),
+  );
 
   const workOrders = await prisma.workOrder.findMany({
     where: { organizationId },
@@ -153,6 +162,15 @@ export async function buildStaffPayrollEstimate(
   });
 
   const revenue = sumWorkOrderRevenue(periodWOs);
+  let attributed = 0;
+  for (const postId of postIds) {
+    const postRevenue = sumWorkOrderRevenue(
+      periodWOs.filter((wo) => wo.postId === postId),
+    );
+    attributed += Math.round(
+      (postRevenue * (shareByPost.get(postId) ?? 100)) / 100,
+    );
+  }
   const periodShifts = profile.shifts.filter(
     (s) => s.endsAt >= start && s.startsAt <= end,
   );
@@ -164,7 +182,7 @@ export async function buildStaffPayrollEstimate(
           uniqueShiftDays(periodShifts, start, end) ||
             (periodShifts.length ? 1 : 0),
         )
-      : dealCostForRevenue(revenue, profile.dealPercent);
+      : dealCostForRevenue(attributed, profile.dealPercent);
 
   return {
     profile,
