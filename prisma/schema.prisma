@@ -65,6 +65,9 @@ model Organization {
   staffProfiles   StaffProfile[]
   postAssignments PostAssignment[]
   staffShifts     StaffShift[]
+  fluidSkus       FluidSku[]
+  stockMovements  StockMovement[]
+  serviceFluidNorms ServiceFluidNorm[]
   workOrderSeq    Int              @default(0)
 }
 
@@ -76,11 +79,12 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships   Membership[]
-  bookings      Booking[]      @relation("ClientBookings")
-  orders        Order[]        @relation("ClientOrders")
-  customers     Customer[]
-  staffProfiles StaffProfile[]
+  memberships    Membership[]
+  bookings       Booking[]      @relation("ClientBookings")
+  orders         Order[]        @relation("ClientOrders")
+  customers      Customer[]
+  staffProfiles  StaffProfile[]
+  stockMovements StockMovement[]
 }
 
 model Membership {
@@ -287,16 +291,88 @@ model Service {
   organizationId String
   name           String
   priceRub       Int
+  /// Норма времени, мин
   durationMin    Int
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   lines        WorkOrderLine[]
   bookingLines BookingLine[]
+  fluidNorms   ServiceFluidNorm[]
 
   @@index([organizationId])
+}
+
+/// Номенклатура техжидкостей (SKU склада)
+model FluidSku {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  /// Единица учёта: л, мл, шт
+  unit           String   @default("л")
+  skuCode        String?
+  isActive       Boolean  @default(true)
+  /// Остаток на складе (в единицах unit)
+  quantityOnHand Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  movements    StockMovement[]
+  serviceNorms ServiceFluidNorm[]
+
+  @@index([organizationId])
+  @@index([organizationId, name])
+}
+
+enum StockMovementType {
+  RECEIPT
+  CONSUMPTION
+  INVENTORY
+}
+
+/// Движение склада: поступление / расход / инвентаризация
+model StockMovement {
+  id             String            @id @default(cuid())
+  organizationId String
+  fluidSkuId     String
+  type           StockMovementType
+  /// Изменение остатка (+ поступление, − расход; для инвентаризации = fact − was)
+  quantityDelta  Float
+  /// Остаток после операции
+  quantityAfter  Float
+  note           String?
+  workOrderId    String?
+  createdById    String?
+  createdAt      DateTime          @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fluidSku     FluidSku     @relation(fields: [fluidSkuId], references: [id], onDelete: Cascade)
+  workOrder    WorkOrder?   @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([fluidSkuId, createdAt])
+  @@index([workOrderId])
+}
+
+/// Норма расхода техжидкости на услугу (на 1 ед. услуги)
+model ServiceFluidNorm {
+  id              String @id @default(cuid())
+  organizationId  String
+  serviceId       String
+  fluidSkuId      String
+  quantityPerUnit Float
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  service      Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  fluidSku     FluidSku     @relation(fields: [fluidSkuId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, fluidSkuId])
+  @@index([organizationId])
+  @@index([fluidSkuId])
 }
 
 model WorkOrder {
@@ -319,8 +395,9 @@ model WorkOrder {
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   customer     Customer        @relation(fields: [customerId], references: [id])
   vehicle      Vehicle         @relation(fields: [vehicleId], references: [id])
-  post         ServicePost?    @relation(fields: [postId], references: [id], onDelete: SetNull)
-  lines        WorkOrderLine[]
+  post           ServicePost?    @relation(fields: [postId], references: [id], onDelete: SetNull)
+  lines          WorkOrderLine[]
+  stockMovements StockMovement[]
 
   @@unique([organizationId, number])
   @@index([organizationId, status])

@@ -60,6 +60,12 @@ export const paymentMethodLabel: Record<string, string> = {
   CASH_AND_TERMINAL: "Нал + терминал",
 };
 
+export const stockMovementLabel: Record<string, string> = {
+  RECEIPT: "Поступление",
+  CONSUMPTION: "Расход",
+  INVENTORY: "Инвентаризация",
+};
+
 export function workOrderStatusTone(
   status: string,
 ): "neutral" | "ok" | "warn" | "accent" {

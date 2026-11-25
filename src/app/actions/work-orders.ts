@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import type { PaymentMethod, WorkOrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { orgIdOf, requireStaffSession } from "@/lib/tenant";
+import { applyNormWriteoff } from "@/lib/warehouse";
 
 function str(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -100,6 +101,7 @@ export async function updateWorkOrderStatus(formData: FormData) {
     if (!allowedPayments.includes(paymentMethodRaw as PaymentMethod)) {
       throw new Error("Укажите вид оплаты для закрытия заказ-наряда");
     }
+    const writeOffByNorms = str(formData, "writeOffByNorms") === "1";
     const now = new Date();
     await prisma.workOrder.updateMany({
       where: { id, organizationId },
@@ -110,6 +112,15 @@ export async function updateWorkOrderStatus(formData: FormData) {
         completedAt: now,
       },
     });
+    if (writeOffByNorms) {
+      await applyNormWriteoff({
+        organizationId,
+        workOrderId: id,
+        createdById: session.id,
+        note: "Автосписание по нормам при закрытии ЗН",
+      });
+      revalidatePath("/owner/warehouse");
+    }
   } else {
     await prisma.workOrder.updateMany({
       where: { id, organizationId },
