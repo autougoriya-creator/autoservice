@@ -61,6 +61,17 @@ export async function loadBoardOccupancy(
       }),
       prisma.customer.findMany({
         where: { organizationId },
+        include: {
+          vehicles: {
+            orderBy: { plate: "asc" },
+            select: {
+              id: true,
+              make: true,
+              model: true,
+              plate: true,
+            },
+          },
+        },
         orderBy: { name: "asc" },
         take: 200,
       }),
@@ -164,6 +175,12 @@ export async function loadBoardOccupancy(
       id: c.id,
       name: c.name,
       phone: c.phone as string,
+      vehicles: c.vehicles.map((v) => ({
+        id: v.id,
+        make: v.make,
+        model: v.model,
+        plate: v.plate,
+      })),
     })),
     services: services.map((s) => ({
       id: s.id,

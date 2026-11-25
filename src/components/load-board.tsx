@@ -12,14 +12,24 @@ const hourLabel = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
 
 function blockTone(kind: BoardBlock["kind"], status: string) {
   if (kind === "work_order") {
-    if (status === "IN_PROGRESS") return "bg-[var(--accent)] text-white border-transparent";
-    if (status === "CLOSED") return "bg-[var(--teal)]/90 text-white border-transparent";
-    if (status === "CONFIRMED") return "bg-[#1a3a4a] text-white border-transparent";
+    if (status === "NEW")
+      return "bg-[#5b7c99] text-white border-transparent";
+    if (status === "NEW_FROM_CLIENT")
+      return "bg-[#9a6b16] text-white border-transparent";
+    if (status === "IN_PROGRESS")
+      return "bg-[var(--accent)] text-white border-transparent";
+    if (status === "CLOSED")
+      return "bg-[var(--teal)]/90 text-white border-transparent";
+    if (status === "CONFIRMED")
+      return "bg-[#1a3a4a] text-white border-transparent";
     return "bg-[#243d4a] text-white border-transparent";
   }
-  if (status === "IN_PROGRESS") return "bg-[var(--accent-deep)] text-white border-transparent";
-  if (status === "DONE") return "bg-[var(--teal-soft)] text-[var(--teal)] border-transparent";
-  if (status === "CONFIRMED") return "bg-white text-[var(--ink)] border-[var(--ink)]/15 shadow-sm";
+  if (status === "IN_PROGRESS")
+    return "bg-[var(--accent-deep)] text-white border-transparent";
+  if (status === "DONE")
+    return "bg-[var(--teal-soft)] text-[var(--teal)] border-transparent";
+  if (status === "CONFIRMED")
+    return "bg-white text-[var(--ink)] border-[var(--ink)]/15 shadow-sm";
   return "bg-[#f4e8c8] text-[#7a5a12] border-transparent";
 }
 
@@ -138,24 +148,43 @@ export function LoadBoardGrid({
 }
 
 export function LoadBoardLegend() {
+  const workOrderStatuses = [
+    { status: "NEW", swatch: "bg-[#5b7c99]" },
+    { status: "NEW_FROM_CLIENT", swatch: "bg-[#9a6b16]" },
+    { status: "CONFIRMED", swatch: "bg-[#1a3a4a]" },
+    { status: "IN_PROGRESS", swatch: "bg-[var(--accent)]" },
+    { status: "CLOSED", swatch: "bg-[var(--teal)]" },
+  ] as const;
+
   return (
-    <div className="mt-4 flex flex-wrap gap-3 text-xs text-[var(--ink-soft)]">
-      <span className="inline-flex items-center gap-2">
-        <span className="h-3 w-3 rounded-sm bg-white border border-[var(--ink)]/15" />
-        Запись подтверждена
-      </span>
-      <span className="inline-flex items-center gap-2">
-        <span className="h-3 w-3 rounded-sm bg-[var(--accent-deep)]" />
-        В работе
-      </span>
-      <span className="inline-flex items-center gap-2">
-        <span className="h-3 w-3 rounded-sm bg-[#1a3a4a]" />
-        Заказ-наряд
-      </span>
-      <span className="inline-flex items-center gap-2">
-        <span className="h-3 w-3 rounded-sm border border-dashed border-[var(--line)] bg-white/60" />
-        Свободный слот
-      </span>
+    <div className="mt-4 space-y-3 rounded-xl border border-[var(--line)] bg-white/70 px-4 py-3">
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-soft)]">
+          Заказ-наряды по статусам
+        </p>
+        <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-[var(--ink)]">
+          {workOrderStatuses.map(({ status, swatch }) => (
+            <span key={status} className="inline-flex items-center gap-2">
+              <span className={`h-3.5 w-3.5 shrink-0 rounded-sm ${swatch}`} />
+              {workOrderStatusLabel[status]}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-2 border-t border-[var(--line)] pt-3 text-xs text-[var(--ink-soft)]">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3.5 w-3.5 rounded-sm border border-[var(--ink)]/15 bg-white" />
+          Запись подтверждена
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3.5 w-3.5 rounded-sm bg-[var(--accent-deep)]" />
+          Запись в работе
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3.5 w-3.5 rounded-sm border border-dashed border-[var(--line)] bg-white/60" />
+          Свободный слот
+        </span>
+      </div>
     </div>
   );
 }
