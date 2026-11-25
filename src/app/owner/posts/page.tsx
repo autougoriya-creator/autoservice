@@ -4,6 +4,7 @@ import {
   updateAssignmentShare,
   updatePostHours,
 } from "@/app/actions/posts";
+import { replacePostStaffNow } from "@/app/actions/staff";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime, bookingStatusLabel } from "@/lib/format";
@@ -11,6 +12,7 @@ import { formatPostHours } from "@/lib/payroll";
 import { isOwner, isStaff, orgIdOf } from "@/lib/tenant";
 import { SectionTitle, StatusPill, SubmitButton } from "@/components/ui";
 import { Field, TextInput, TextSelect } from "@/components/forms";
+import Link from "next/link";
 
 export default async function PostsBoardPage() {
   const session = await requireSession(["OWNER", "ADMIN", "STAFF"]);
@@ -83,9 +85,20 @@ export default async function PostsBoardPage() {
         description={
           staffView
             ? "График и исполнители на ваших постах. Полная загрузка — на «Мой пост»."
-            : "У каждого поста своё время работы и свои исполнители (можно несколько). Доли % — у владельца."
+            : "У каждого поста своё время работы и свои исполнители (можно несколько). Доли % — у владельца. Массовое заполнение смен — в «График»."
         }
       />
+
+      {canAssign ? (
+        <p className="mb-6 text-sm text-[var(--ink-soft)]">
+          <Link
+            href="/owner/schedule"
+            className="font-semibold text-[var(--accent)]"
+          >
+            Массовое заполнение и замена на графике →
+          </Link>
+        </p>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         {posts.map((post) => {
@@ -273,6 +286,43 @@ export default async function PostsBoardPage() {
                     ) : null}
                     <SubmitButton className="w-full sm:w-auto">
                       Назначить
+                    </SubmitButton>
+                  </form>
+                ) : null}
+
+                {canAssign ? (
+                  <form
+                    action={replacePostStaffNow}
+                    className="mt-2 space-y-2 rounded-lg border border-[var(--line)] bg-[var(--paper)]/60 px-3 py-3"
+                  >
+                    <input type="hidden" name="postId" value={post.id} />
+                    <input type="hidden" name="replaceAll" value="1" />
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-soft)]">
+                      Замена сейчас
+                    </p>
+                    <Field
+                      label="Кто заступает"
+                      htmlFor={`replace-in-${post.id}`}
+                      hint="Снимает всех текущих с поста и ставит выбранного на сегодня"
+                    >
+                      <TextSelect
+                        id={`replace-in-${post.id}`}
+                        name="incomingStaffProfileId"
+                        required
+                        defaultValue=""
+                      >
+                        <option value="" disabled>
+                          Выберите…
+                        </option>
+                        {floorProfiles.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.user.name} · {p.title}
+                          </option>
+                        ))}
+                      </TextSelect>
+                    </Field>
+                    <SubmitButton className="w-full sm:w-auto" variant="dark">
+                      Заменить на посту
                     </SubmitButton>
                   </form>
                 ) : null}
