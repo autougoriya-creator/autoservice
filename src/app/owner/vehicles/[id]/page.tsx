@@ -21,11 +21,18 @@ export default async function VehicleEditPage({
   const organizationId = orgIdOf(session);
   const { id } = await params;
 
-  const [vehicle, customers] = await Promise.all([
-    prisma.vehicle.findFirst({ where: { id, organizationId } }),
+  const [vehicle, customers, vehicleClasses] = await Promise.all([
+    prisma.vehicle.findFirst({
+      where: { id, organizationId },
+      include: { vehicleClass: true },
+    }),
     prisma.customer.findMany({
       where: { organizationId },
       orderBy: { name: "asc" },
+    }),
+    prisma.vehicleClass.findMany({
+      where: { organizationId },
+      orderBy: { sortOrder: "asc" },
     }),
   ]);
 
@@ -36,7 +43,11 @@ export default async function VehicleEditPage({
       <SectionTitle
         eyebrow="Справочник"
         title={`${vehicle.make} ${vehicle.model}`}
-        description={`Госномер ${vehicle.plate}`}
+        description={`Госномер ${vehicle.plate}${
+          vehicle.vehicleClass
+            ? ` · класс ${vehicle.vehicleClass.code} (${vehicle.vehicleClass.name})`
+            : ""
+        }`}
       />
 
       <FormCard>
@@ -52,6 +63,24 @@ export default async function VehicleEditPage({
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
+                </option>
+              ))}
+            </TextSelect>
+          </Field>
+          <Field
+            label="Класс автомобиля"
+            htmlFor="vehicleClassId"
+            hint="От класса зависит цена услуг"
+          >
+            <TextSelect
+              id="vehicleClassId"
+              name="vehicleClassId"
+              defaultValue={vehicle.vehicleClassId ?? ""}
+            >
+              <option value="">— без класса —</option>
+              {vehicleClasses.map((vc) => (
+                <option key={vc.id} value={vc.id}>
+                  {vc.code} · {vc.name}
                 </option>
               ))}
             </TextSelect>

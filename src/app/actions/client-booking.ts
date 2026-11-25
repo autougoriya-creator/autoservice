@@ -10,6 +10,7 @@ import {
   BOARD_SNAP_MIN,
   BOARD_START_HOUR,
 } from "@/lib/load-board";
+import { resolveServicePriceRub } from "@/lib/pricing";
 
 function str(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -69,6 +70,7 @@ export async function createClientSelfBooking(formData: FormData) {
     }),
     prisma.service.findFirst({
       where: { id: serviceId, organizationId, isActive: true },
+      include: { classPrices: true },
     }),
     postId
       ? prisma.servicePost.findFirst({
@@ -104,7 +106,10 @@ export async function createClientSelfBooking(formData: FormData) {
           {
             serviceId: service.id,
             name: service.name,
-            priceRub: service.priceRub,
+            priceRub: resolveServicePriceRub(
+              service,
+              vehicle.vehicleClassId,
+            ),
             durationMin: service.durationMin,
             quantity: 1,
           },

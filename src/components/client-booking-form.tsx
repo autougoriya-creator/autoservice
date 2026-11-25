@@ -11,6 +11,7 @@ import {
   TextTextarea,
 } from "@/components/forms";
 import { formatRub } from "@/lib/format";
+import { resolveServicePriceRub } from "@/lib/pricing";
 import { formatDuration } from "@/lib/work-order";
 import { buildClientSlots, type BusyInterval } from "@/lib/client-slots";
 
@@ -19,6 +20,8 @@ type VehicleOption = {
   make: string;
   model: string;
   plate: string;
+  vehicleClassId: string | null;
+  vehicleClass: { code: string; name: string } | null;
 };
 
 type ServiceOption = {
@@ -26,6 +29,7 @@ type ServiceOption = {
   name: string;
   priceRub: number;
   durationMin: number;
+  classPrices: { vehicleClassId: string; priceRub: number }[];
 };
 
 type PostOption = { id: string; name: string };
@@ -63,8 +67,15 @@ export function ClientBookingForm({
     [busy],
   );
 
+  const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
   const selectedService = services.find((s) => s.id === serviceId);
   const durationMin = selectedService?.durationMin ?? 30;
+  const priceRub = selectedService
+    ? resolveServicePriceRub(
+        selectedService,
+        selectedVehicle?.vehicleClassId,
+      )
+    : 0;
 
   const slots = useMemo(
     () =>
@@ -121,6 +132,7 @@ export function ClientBookingForm({
               {vehicles.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.make} {v.model} · {v.plate}
+                  {v.vehicleClass ? ` · кл. ${v.vehicleClass.code}` : ""}
                 </option>
               ))}
             </TextSelect>
@@ -132,6 +144,9 @@ export function ClientBookingForm({
               Автомобиль:{" "}
               <span className="font-semibold text-[var(--ink)]">
                 {vehicles[0].make} {vehicles[0].model} · {vehicles[0].plate}
+                {vehicles[0].vehicleClass
+                  ? ` · кл. ${vehicles[0].vehicleClass.code}`
+                  : ""}
               </span>
             </p>
           </>
@@ -148,12 +163,17 @@ export function ClientBookingForm({
               setSlotKey("");
             }}
           >
-            {services.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} · {formatRub(s.priceRub)} ·{" "}
-                {formatDuration(s.durationMin)}
-              </option>
-            ))}
+            {services.map((s) => {
+              const p = resolveServicePriceRub(
+                s,
+                selectedVehicle?.vehicleClassId,
+              );
+              return (
+                <option key={s.id} value={s.id}>
+                  {s.name} · {formatRub(p)} · {formatDuration(s.durationMin)}
+                </option>
+              );
+            })}
           </TextSelect>
         </Field>
 
@@ -215,7 +235,7 @@ export function ClientBookingForm({
               К оплате на точке
             </p>
             <p className="brand-mark mt-1 text-2xl">
-              {formatRub(selectedService.priceRub)}
+              {formatRub(priceRub)}
               <span className="ml-3 text-sm font-normal text-white/70">
                 {formatDuration(selectedService.durationMin)}
               </span>

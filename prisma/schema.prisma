@@ -60,15 +60,17 @@ model Organization {
   orders          Order[]
   customers       Customer[]
   vehicles        Vehicle[]
-  services        Service[]
-  workOrders      WorkOrder[]
-  staffProfiles   StaffProfile[]
-  postAssignments PostAssignment[]
-  staffShifts     StaffShift[]
-  fluidSkus       FluidSku[]
-  stockMovements  StockMovement[]
+  services          Service[]
+  workOrders        WorkOrder[]
+  staffProfiles     StaffProfile[]
+  postAssignments   PostAssignment[]
+  staffShifts       StaffShift[]
+  fluidSkus         FluidSku[]
+  stockMovements    StockMovement[]
   serviceFluidNorms ServiceFluidNorm[]
-  workOrderSeq    Int              @default(0)
+  vehicleClasses    VehicleClass[]
+  serviceClassPrices ServiceClassPrice[]
+  workOrderSeq      Int              @default(0)
 }
 
 model User {
@@ -263,10 +265,30 @@ model Customer {
   @@index([organizationId, phone])
 }
 
+/// Класс / категория автомобиля (ценообразование)
+model VehicleClass {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// Короткий код: 1, 2, 3…
+  code           String
+  name           String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vehicles     Vehicle[]
+  classPrices  ServiceClassPrice[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, sortOrder])
+}
+
 model Vehicle {
   id             String   @id @default(cuid())
   organizationId String
   customerId     String
+  vehicleClassId String?
   make           String
   model          String
   plate          String
@@ -276,12 +298,14 @@ model Vehicle {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  vehicleClass VehicleClass? @relation(fields: [vehicleClassId], references: [id], onDelete: SetNull)
   workOrders   WorkOrder[]
 
   @@index([organizationId])
   @@index([customerId])
+  @@index([vehicleClassId])
   @@index([organizationId, plate])
 }
 
@@ -290,6 +314,7 @@ model Service {
   id             String   @id @default(cuid())
   organizationId String
   name           String
+  /// Базовая цена, ₽ (если нет цены по классу)
   priceRub       Int
   /// Норма времени, мин
   durationMin    Int
@@ -301,8 +326,26 @@ model Service {
   lines        WorkOrderLine[]
   bookingLines BookingLine[]
   fluidNorms   ServiceFluidNorm[]
+  classPrices  ServiceClassPrice[]
 
   @@index([organizationId])
+}
+
+/// Цена услуги по классу автомобиля
+model ServiceClassPrice {
+  id             String @id @default(cuid())
+  organizationId String
+  serviceId      String
+  vehicleClassId String
+  priceRub       Int
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  service      Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  vehicleClass VehicleClass @relation(fields: [vehicleClassId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, vehicleClassId])
+  @@index([organizationId])
+  @@index([vehicleClassId])
 }
 
 /// Номенклатура техжидкостей (SKU склада)

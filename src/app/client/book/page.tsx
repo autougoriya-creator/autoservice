@@ -11,7 +11,10 @@ export default async function ClientBookPage() {
   const customer = await prisma.customer.findFirst({
     where: { organizationId: orgId, userId: session.id },
     include: {
-      vehicles: { orderBy: { createdAt: "asc" } },
+      vehicles: {
+        include: { vehicleClass: true },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
 
@@ -37,6 +40,7 @@ export default async function ClientBookPage() {
   const [services, posts, bookings, workOrders] = await Promise.all([
     prisma.service.findMany({
       where: { organizationId: orgId, isActive: true },
+      include: { classPrices: true },
       orderBy: { name: "asc" },
     }),
     prisma.servicePost.findMany({
@@ -116,12 +120,20 @@ export default async function ClientBookPage() {
           make: v.make,
           model: v.model,
           plate: v.plate,
+          vehicleClassId: v.vehicleClassId,
+          vehicleClass: v.vehicleClass
+            ? { code: v.vehicleClass.code, name: v.vehicleClass.name }
+            : null,
         }))}
         services={services.map((s) => ({
           id: s.id,
           name: s.name,
           priceRub: s.priceRub,
           durationMin: s.durationMin,
+          classPrices: s.classPrices.map((p) => ({
+            vehicleClassId: p.vehicleClassId,
+            priceRub: p.priceRub,
+          })),
         }))}
         posts={posts.map((p) => ({ id: p.id, name: p.name }))}
         busy={busy}

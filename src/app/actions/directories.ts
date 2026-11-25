@@ -99,6 +99,18 @@ export async function deleteCustomer(formData: FormData) {
   redirect("/owner/clients");
 }
 
+async function resolveVehicleClassId(
+  organizationId: string,
+  raw: string,
+): Promise<string | null> {
+  if (!raw) return null;
+  const vc = await prisma.vehicleClass.findFirst({
+    where: { id: raw, organizationId },
+  });
+  if (!vc) throw new Error("Класс автомобиля не найден");
+  return vc.id;
+}
+
 export async function createVehicle(formData: FormData) {
   const session = await requireStaffSession();
   const organizationId = orgIdOf(session);
@@ -106,6 +118,10 @@ export async function createVehicle(formData: FormData) {
   const make = str(formData, "make");
   const model = str(formData, "model");
   const plate = str(formData, "plate").toUpperCase();
+  const vehicleClassId = await resolveVehicleClassId(
+    organizationId,
+    str(formData, "vehicleClassId"),
+  );
 
   if (!customerId || !make || !model || !plate) {
     throw new Error("Заполните клиента, марку, модель и госномер");
@@ -123,6 +139,7 @@ export async function createVehicle(formData: FormData) {
     data: {
       organizationId,
       customerId,
+      vehicleClassId,
       make,
       model,
       plate,
@@ -145,6 +162,10 @@ export async function updateVehicle(formData: FormData) {
   const make = str(formData, "make");
   const model = str(formData, "model");
   const plate = str(formData, "plate").toUpperCase();
+  const vehicleClassId = await resolveVehicleClassId(
+    organizationId,
+    str(formData, "vehicleClassId"),
+  );
 
   if (!id || !customerId || !make || !model || !plate) {
     throw new Error("Некорректные данные");
@@ -162,6 +183,7 @@ export async function updateVehicle(formData: FormData) {
     where: { id, organizationId },
     data: {
       customerId,
+      vehicleClassId,
       make,
       model,
       plate,
@@ -186,6 +208,39 @@ export async function deleteVehicle(formData: FormData) {
   redirect("/owner/vehicles");
 }
 
+/** Сохранить цены услуги по классам из полей classPrice_<vehicleClassId>. */
+async function upsertClassPrices(
+  organizationId: string,
+  serviceId: string,
+  formData: FormData,
+) {
+  const classes = await prisma.vehicleClass.findMany({
+    where: { organizationId },
+    orderBy: { sortOrder: "asc" },
+  });
+  for (const vc of classes) {
+    const raw = str(formData, `classPrice_${vc.id}`);
+    if (!raw) continue;
+    const priceRub = Number.parseInt(raw, 10);
+    if (!Number.isFinite(priceRub) || priceRub < 0) continue;
+    await prisma.serviceClassPrice.upsert({
+      where: {
+        serviceId_vehicleClassId: {
+          serviceId,
+          vehicleClassId: vc.id,
+        },
+      },
+      create: {
+        organizationId,
+        serviceId,
+        vehicleClassId: vc.id,
+        priceRub,
+      },
+      update: { priceRub },
+    });
+  }
+}
+
 export async function createService(formData: FormData) {
   const session = await requireStaffSession();
   const organizationId = orgIdOf(session);
@@ -207,6 +262,8 @@ export async function createService(formData: FormData) {
     },
   });
 
+  await upsertClassPrices(organizationId, service.id, formData);
+
   revalidatePath("/owner/services");
   redirect(`/owner/services/${service.id}`);
 }
@@ -223,7 +280,7 @@ export async function updateService(formData: FormData) {
     throw new Error("Некорректные данные");
   }
 
-  await prisma.service.updateMany({
+  const updated = await prisma.service.updateMany({
     where: { id, organizationId },
     data: {
       name,
@@ -232,6 +289,9 @@ export async function updateService(formData: FormData) {
       isActive: str(formData, "isActive") !== "0",
     },
   });
+  if (updated.count === 0) throw new Error("Услуга не найдена");
+
+  await upsertClassPrices(organizationId, id, formData);
 
   revalidatePath("/owner/services");
   revalidatePath(`/owner/services/${id}`);

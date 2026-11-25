@@ -4,12 +4,19 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { PaymentMethod, WorkOrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { resolveServicePriceRub } from "@/lib/pricing";
 import { orgIdOf, requireStaffSession } from "@/lib/tenant";
 import { applyNormWriteoff } from "@/lib/warehouse";
 
 function str(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
+}
+
+function intOr(formData: FormData, key: string, fallback: number) {
+  const raw = str(formData, key);
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 const allowedStatuses: WorkOrderStatus[] = [
@@ -51,6 +58,7 @@ export async function createWorkOrder(formData: FormData) {
     }),
     prisma.service.findMany({
       where: { organizationId, id: { in: serviceIds }, isActive: true },
+      include: { classPrices: true },
     }),
   ]);
 
@@ -71,13 +79,25 @@ export async function createWorkOrder(formData: FormData) {
       vehicleId,
       notes,
       lines: {
-        create: services.map((service) => ({
-          serviceId: service.id,
-          name: service.name,
-          priceRub: service.priceRub,
-          durationMin: service.durationMin,
-          quantity: 1,
-        })),
+        create: services.map((service) => {
+          const requested = intOr(
+            formData,
+            `durationMin_${service.id}`,
+            service.durationMin,
+          );
+          // Админ может увеличить норму, но не уменьшить
+          const durationMin = Math.max(service.durationMin, requested);
+          return {
+            serviceId: service.id,
+            name: service.name,
+            priceRub: resolveServicePriceRub(
+              service,
+              vehicle.vehicleClassId,
+            ),
+            durationMin,
+            quantity: 1,
+          };
+        }),
       },
     },
   });

@@ -10,7 +10,7 @@ export default async function VehiclesPage() {
 
   const vehicles = await prisma.vehicle.findMany({
     where: { organizationId },
-    include: { customer: true },
+    include: { customer: true, vehicleClass: true },
     orderBy: [{ make: "asc" }, { model: "asc" }],
   });
 
@@ -19,7 +19,7 @@ export default async function VehiclesPage() {
       <SectionTitle
         eyebrow="Справочник"
         title="Автомобили"
-        description="Авто привязаны к клиентам. Госномер — главный идентификатор на мойке."
+        description="Авто привязаны к клиентам. Класс определяет цену услуг."
       />
 
       <Toolbar>
@@ -33,7 +33,7 @@ export default async function VehiclesPage() {
           description="Сначала добавьте клиента, затем его машину."
         />
       ) : (
-        <DataTable headers={["Госномер", "Марка / модель", "Клиент", ""]}>
+        <DataTable headers={["Госномер", "Марка / модель", "Класс", "Клиент", ""]}>
           {vehicles.map((v) => (
             <tr key={v.id}>
               <td className="px-4 py-3 font-semibold tracking-wide text-[var(--ink)]">
@@ -44,6 +44,11 @@ export default async function VehiclesPage() {
               <td className="px-4 py-3 text-[var(--ink-soft)]">
                 {v.make} {v.model}
                 {v.year ? ` · ${v.year}` : ""}
+              </td>
+              <td className="px-4 py-3 text-[var(--ink-soft)]">
+                {v.vehicleClass
+                  ? `${v.vehicleClass.code} · ${v.vehicleClass.name}`
+                  : "—"}
               </td>
               <td className="px-4 py-3">
                 <Link
