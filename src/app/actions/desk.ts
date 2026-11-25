@@ -1,7 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { BookingStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import {
+  canCreateWorkOrderFromBooking,
+  canTransitionBookingStatus,
+  selectableBookingStatuses,
+} from "@/lib/booking";
 import {
   bookingLinesDuration,
   bookingLinesTotal,
@@ -11,6 +17,7 @@ import {
 } from "@/lib/booking-plan";
 import { normalizePhone } from "@/lib/phone";
 import { isWithinPostHours } from "@/lib/payroll";
+import { resolveServicePriceRub } from "@/lib/pricing";
 import { orgIdOf, requireManagementSession } from "@/lib/tenant";
 import { canTransitionWorkOrderStatus } from "@/lib/work-order";
 
@@ -37,6 +44,9 @@ function revalidateDesk() {
   revalidatePath("/owner/desk");
   revalidatePath("/owner/bookings");
   revalidatePath("/owner/work-orders");
+  revalidatePath("/owner/planned");
+  revalidatePath("/client");
+  revalidatePath("/client/book");
 }
 
 export type DeskActionResult =
@@ -128,15 +138,33 @@ export async function updateDeskBooking(input: {
     if (Number.isNaN(startsAt.getTime())) {
       return { ok: false, error: "Некорректное время" };
     }
-    const allowed = ["PENDING", "CONFIRMED", "IN_PROGRESS", "DONE", "CANCELLED"];
-    if (!allowed.includes(input.status)) {
-      return { ok: false, error: "Некорректный статус" };
+    const nextStatus = input.status as BookingStatus;
+    if (!["NEW", "NEW_FROM_CLIENT", "CONFIRMED"].includes(nextStatus)) {
+      return {
+        ok: false,
+        error: "Отмену записи делайте отдельной кнопкой с указанием причины",
+      };
     }
 
     const existing = await prisma.booking.findFirst({
       where: { id: input.id, organizationId },
     });
     if (!existing) return { ok: false, error: "Запись не найдена" };
+    if (existing.status === "CANCELLED") {
+      return { ok: false, error: "Отменённую запись нельзя изменить" };
+    }
+    if (existing.workOrderId) {
+      return {
+        ok: false,
+        error: "По записи уже создан заказ-наряд — правьте карточку ЗН",
+      };
+    }
+    if (!canTransitionBookingStatus(existing.status, nextStatus)) {
+      return {
+        ok: false,
+        error: "Недопустимый переход статуса записи",
+      };
+    }
 
     const post = await prisma.servicePost.findFirst({
       where: { id: input.postId, organizationId, isActive: true },
@@ -173,12 +201,7 @@ export async function updateDeskBooking(input: {
           postId: input.postId,
           startsAt,
           durationMin,
-          status: input.status as
-            | "PENDING"
-            | "CONFIRMED"
-            | "IN_PROGRESS"
-            | "DONE"
-            | "CANCELLED",
+          status: nextStatus,
           serviceName,
           plannedAmountRub,
           vehicleInfo: input.vehicleInfo?.trim() || null,
@@ -203,13 +226,203 @@ export async function updateDeskBooking(input: {
     });
 
     revalidateDesk();
-    revalidatePath("/owner/planned");
     return { ok: true };
   } catch (e) {
     console.error(e);
     return { ok: false, error: "Не удалось сохранить запись" };
   }
 }
+
+/** Отмена записи с обязательной причиной */
+export async function cancelDeskBooking(input: {
+  id: string;
+  reason: string;
+}): Promise<DeskActionResult> {
+  try {
+    const session = await requireManagementSession();
+    const organizationId = orgIdOf(session);
+    const reason = input.reason.trim();
+    if (reason.length < 3) {
+      return { ok: false, error: "Укажите причину отмены (минимум 3 символа)" };
+    }
+
+    const existing = await prisma.booking.findFirst({
+      where: { id: input.id, organizationId },
+    });
+    if (!existing) return { ok: false, error: "Запись не найдена" };
+    if (existing.status === "CANCELLED") {
+      return { ok: false, error: "Запись уже отменена" };
+    }
+    if (existing.workOrderId) {
+      return {
+        ok: false,
+        error: "По записи уже есть заказ-наряд — отменить нельзя",
+      };
+    }
+
+    await prisma.booking.update({
+      where: { id: existing.id },
+      data: {
+        status: "CANCELLED",
+        cancelReason: reason,
+        cancelledAt: new Date(),
+      },
+    });
+
+    revalidateDesk();
+    return { ok: true };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "Не удалось отменить запись" };
+  }
+}
+
+/**
+ * Клиент приехал: из записи создаём заказ-наряд (IN_PROGRESS) и связываем.
+ */
+export async function createWorkOrderFromBooking(input: {
+  bookingId: string;
+  vehicleId?: string;
+}): Promise<DeskActionResult & { workOrderId?: string }> {
+  try {
+    const session = await requireManagementSession();
+    const organizationId = orgIdOf(session);
+
+    const booking = await prisma.booking.findFirst({
+      where: { id: input.bookingId, organizationId },
+      include: { lines: true },
+    });
+    if (!booking) return { ok: false, error: "Запись не найдена" };
+    if (
+      !canCreateWorkOrderFromBooking({
+        status: booking.status,
+        workOrderId: booking.workOrderId,
+      })
+    ) {
+      return {
+        ok: false,
+        error: booking.workOrderId
+          ? "Заказ-наряд по этой записи уже создан"
+          : "Нельзя создать ЗН из отменённой записи",
+      };
+    }
+
+    let customerId = booking.customerId;
+    if (!customerId) {
+      const byUser = await prisma.customer.findFirst({
+        where: { organizationId, userId: booking.clientId },
+      });
+      customerId = byUser?.id ?? null;
+    }
+    if (!customerId) {
+      return {
+        ok: false,
+        error: "К записи не привязан клиент справочника — укажите клиента",
+      };
+    }
+
+    const customer = await prisma.customer.findFirst({
+      where: { id: customerId, organizationId },
+      include: { vehicles: { orderBy: { createdAt: "asc" } } },
+    });
+    if (!customer) return { ok: false, error: "Клиент не найден" };
+
+    let vehicleId = input.vehicleId || booking.vehicleId || null;
+    if (!vehicleId && customer.vehicles.length === 1) {
+      vehicleId = customer.vehicles[0].id;
+    }
+    if (!vehicleId) {
+      return {
+        ok: false,
+        error: "Выберите автомобиль клиента для заказ-наряда",
+      };
+    }
+
+    const vehicle = await prisma.vehicle.findFirst({
+      where: { id: vehicleId, organizationId, customerId: customer.id },
+      include: { vehicleClass: true },
+    });
+    if (!vehicle) return { ok: false, error: "Автомобиль не найден" };
+
+    const serviceIds = booking.lines
+      .map((l) => l.serviceId)
+      .filter((id): id is string => Boolean(id));
+    const catalogServices =
+      serviceIds.length > 0
+        ? await prisma.service.findMany({
+            where: { organizationId, id: { in: serviceIds } },
+            include: { classPrices: true },
+          })
+        : [];
+    const serviceById = new Map(catalogServices.map((s) => [s.id, s]));
+
+    const lineData =
+      booking.lines.length > 0
+        ? booking.lines.map((l) => {
+            const svc = l.serviceId ? serviceById.get(l.serviceId) : null;
+            return {
+              serviceId: l.serviceId,
+              name: l.name,
+              priceRub: svc
+                ? resolveServicePriceRub(svc, vehicle.vehicleClassId)
+                : l.priceRub,
+              durationMin: l.durationMin,
+              quantity: l.quantity,
+            };
+          })
+        : [
+            {
+              serviceId: null,
+              name: booking.serviceName || "Услуга",
+              priceRub: booking.plannedAmountRub,
+              durationMin: booking.durationMin,
+              quantity: 1,
+            },
+          ];
+
+    const workOrder = await prisma.$transaction(async (tx) => {
+      const updated = await tx.organization.update({
+        where: { id: organizationId },
+        data: { workOrderSeq: { increment: 1 } },
+      });
+      const wo = await tx.workOrder.create({
+        data: {
+          organizationId,
+          number: updated.workOrderSeq,
+          status: "IN_PROGRESS",
+          customerId: customer.id,
+          vehicleId: vehicle.id,
+          postId: booking.postId,
+          scheduledAt: booking.startsAt,
+          notes: `Создан из записи · ${booking.serviceName}`,
+          lines: { create: lineData },
+        },
+      });
+      await tx.booking.update({
+        where: { id: booking.id },
+        data: {
+          workOrderId: wo.id,
+          customerId: customer.id,
+          vehicleId: vehicle.id,
+          status: "CONFIRMED",
+          vehicleInfo:
+            booking.vehicleInfo ||
+            `${vehicle.make} ${vehicle.model} · ${vehicle.plate}`,
+        },
+      });
+      return wo;
+    });
+
+    revalidateDesk();
+    revalidatePath(`/owner/work-orders/${workOrder.id}`);
+    return { ok: true, workOrderId: workOrder.id };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "Не удалось создать заказ-наряд из записи" };
+  }
+}
+
+export { selectableBookingStatuses };
 
 export async function updateDeskWorkOrder(input: {
   id: string;
@@ -298,6 +511,7 @@ export async function createDeskBooking(input: {
   newCustomerName?: string;
   newCustomerPhone?: string;
   vehicleInfo?: string;
+  vehicleId?: string;
 }): Promise<
   DeskActionResult & {
     id?: string;
@@ -305,6 +519,8 @@ export async function createDeskBooking(input: {
     serviceName?: string;
     durationMin?: number;
     services?: string[];
+    customerId?: string;
+    vehicleId?: string | null;
   }
 > {
   try {
@@ -351,6 +567,19 @@ export async function createDeskBooking(input: {
     }
 
     const clientId = await ensureBookingUser(organizationId, customer);
+
+    const vehicleId = input.vehicleId?.trim() || null;
+    if (vehicleId) {
+      const vehicle = await prisma.vehicle.findFirst({
+        where: {
+          id: vehicleId,
+          organizationId,
+          customerId: customer.id,
+        },
+      });
+      if (!vehicle) return { ok: false, error: "Автомобиль не найден" };
+    }
+
     let lines = normalizePlannedLines(input.lines ?? []);
     if (lines.length === 0 && input.serviceName?.trim()) {
       lines = [
@@ -389,10 +618,12 @@ export async function createDeskBooking(input: {
       data: {
         organizationId,
         clientId,
+        customerId: customer.id,
         postId: input.postId,
         serviceName,
         plannedAmountRub,
         vehicleInfo: input.vehicleInfo?.trim() || null,
+        vehicleId,
         startsAt,
         durationMin,
         status: "CONFIRMED",
@@ -411,7 +642,6 @@ export async function createDeskBooking(input: {
 
     revalidateDesk();
     revalidatePath("/owner/clients");
-    revalidatePath("/owner/planned");
     return {
       ok: true,
       id: booking.id,
@@ -419,6 +649,8 @@ export async function createDeskBooking(input: {
       serviceName,
       durationMin,
       services: lines.map((l) => l.name),
+      customerId: customer.id,
+      vehicleId,
     };
   } catch (e) {
     console.error(e);

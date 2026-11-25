@@ -15,8 +15,8 @@ function str(formData: FormData, key: string) {
 }
 
 /**
- * Самозапись из ЛК: создаёт заказ-наряд со статусом NEW_FROM_CLIENT.
- * Телефон клиента уже известен через связку User → Customer.
+ * Самозапись из ЛК: создаёт запись со статусом NEW_FROM_CLIENT.
+ * Заказ-наряд появится, когда администратор отметит «клиент приехал».
  */
 export async function createClientSelfBooking(formData: FormData) {
   const session = await requireSession(["CLIENT"]);
@@ -26,7 +26,6 @@ export async function createClientSelfBooking(formData: FormData) {
   const serviceId = str(formData, "serviceId");
   const startsAtIso = str(formData, "startsAtIso");
   const postId = str(formData, "postId");
-  const notes = str(formData, "notes") || null;
 
   if (!vehicleId || !serviceId || !startsAtIso) {
     throw new Error("Выберите услугу, автомобиль и время");
@@ -92,30 +91,29 @@ export async function createClientSelfBooking(formData: FormData) {
     );
   }
 
-  const updated = await prisma.organization.update({
-    where: { id: organizationId },
-    data: { workOrderSeq: { increment: 1 } },
-  });
+  const priceRub = resolveServicePriceRub(service, vehicle.vehicleClassId);
+  const vehicleInfo = `${vehicle.make} ${vehicle.model} · ${vehicle.plate}`;
 
-  const workOrder = await prisma.workOrder.create({
+  const booking = await prisma.booking.create({
     data: {
       organizationId,
-      number: updated.workOrderSeq,
-      status: "NEW_FROM_CLIENT",
+      clientId: session.id,
       customerId: customer.id,
-      vehicleId: vehicle.id,
       postId: post.id,
-      scheduledAt: startsAt,
-      notes,
+      serviceName: service.name,
+      plannedAmountRub: priceRub,
+      vehicleInfo,
+      vehicleId: vehicle.id,
+      startsAt,
+      durationMin: service.durationMin,
+      status: "NEW_FROM_CLIENT",
       lines: {
         create: [
           {
+            organizationId,
             serviceId: service.id,
             name: service.name,
-            priceRub: resolveServicePriceRub(
-              service,
-              vehicle.vehicleClassId,
-            ),
+            priceRub,
             durationMin: service.durationMin,
             quantity: 1,
           },
@@ -126,9 +124,8 @@ export async function createClientSelfBooking(formData: FormData) {
 
   revalidatePath("/client");
   revalidatePath("/client/book");
-  revalidatePath("/client/orders");
-  revalidatePath("/owner/work-orders");
+  revalidatePath("/owner/bookings");
   revalidatePath("/owner/desk");
   revalidatePath("/owner/planned");
-  redirect(`/client/orders?created=${workOrder.id}`);
+  redirect(`/client?booked=${booking.id}`);
 }

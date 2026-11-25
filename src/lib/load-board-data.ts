@@ -1,13 +1,7 @@
 import type { BoardBlock } from "@/lib/load-board";
+import { BOARD_BOOKING_STATUSES } from "@/lib/booking";
 import { workOrderDuration, workOrderNumberLabel } from "@/lib/work-order";
 import { prisma } from "@/lib/prisma";
-
-const BOOKING_STATUSES = new Set([
-  "PENDING",
-  "CONFIRMED",
-  "IN_PROGRESS",
-  "DONE",
-]);
 
 const WORK_ORDER_STATUSES = new Set([
   "NEW",
@@ -93,7 +87,8 @@ export async function loadBoardOccupancy(
   const bookings = bookingsRaw.filter(
     (b) =>
       allowedPost(b.postId) &&
-      BOOKING_STATUSES.has(String(b.status)) &&
+      BOARD_BOOKING_STATUSES.has(String(b.status)) &&
+      !b.workOrderId &&
       inDay(b.startsAt, dayStart, dayEnd),
   );
 
@@ -132,6 +127,9 @@ export async function loadBoardOccupancy(
         vehicleInfo: b.vehicleInfo ?? "",
         services: serviceNames,
         plannedAmountRub: b.plannedAmountRub,
+        customerId: b.customerId,
+        vehicleId: b.vehicleId,
+        workOrderId: b.workOrderId,
         lineItems: b.lines.map((l) => ({
           serviceId: l.serviceId,
           name: l.name,

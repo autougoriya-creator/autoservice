@@ -25,11 +25,14 @@ import {
   type DeskBlock,
 } from "@/lib/load-board";
 import {
+  cancelDeskBooking,
   createDeskBooking,
+  createWorkOrderFromBooking,
   moveDeskItem,
   updateDeskBooking,
   updateDeskWorkOrder,
 } from "@/app/actions/desk";
+import { selectableBookingStatuses } from "@/lib/booking";
 import {
   bookingStatusLabel,
   formatRub,
@@ -37,7 +40,7 @@ import {
 } from "@/lib/format";
 import { phoneDigits } from "@/lib/phone";
 import { selectableWorkOrderStatuses } from "@/lib/work-order";
-import type { WorkOrderStatus } from "@prisma/client";
+import type { BookingStatus, WorkOrderStatus } from "@prisma/client";
 
 type Post = {
   id: string;
@@ -125,12 +128,11 @@ function workOrderBlockTone(status: string) {
 
 function blockTone(kind: DeskBlock["kind"], status: string) {
   if (kind === "work_order") return workOrderBlockTone(status);
-  if (status === "IN_PROGRESS")
-    return "bg-[var(--accent-deep)] text-white border-transparent";
-  if (status === "DONE")
-    return "bg-[var(--teal-soft)] text-[var(--teal)] border-transparent";
+  if (status === "NEW_FROM_CLIENT")
+    return "bg-[#9a6b16] text-white border-transparent";
   if (status === "CONFIRMED")
     return "bg-white text-[var(--ink)] border-[var(--ink)]/15 shadow-sm";
+  // NEW
   return "bg-[#f4e8c8] text-[#7a5a12] border-transparent";
 }
 
@@ -601,6 +603,7 @@ export function InteractiveDesk({
           block={selected}
           posts={posts}
           catalog={services}
+          customers={customers}
           readOnly={readOnly}
           showFinance={showFinance}
           onClose={() => setSelectedId(null)}
@@ -608,6 +611,11 @@ export function InteractiveDesk({
             setBlocks((prev) =>
               prev.map((b) => (b.id === next.id ? next : b)),
             );
+            startTransition(() => router.refresh());
+          }}
+          onRemoved={(id) => {
+            setBlocks((prev) => prev.filter((b) => b.id !== id));
+            setSelectedId(null);
             startTransition(() => router.refresh());
           }}
           onError={setError}
@@ -665,16 +673,16 @@ function LoadBoardLegendStatic({ readOnly }: { readOnly?: boolean }) {
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[var(--line)] pt-3 text-xs text-[var(--ink-soft)]">
         <span className="inline-flex items-center gap-2">
+          <span className="h-3.5 w-3.5 rounded-sm bg-[#f4e8c8]" />
+          Запись (новая)
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3.5 w-3.5 rounded-sm bg-[#9a6b16]" />
+          Запись от клиента
+        </span>
+        <span className="inline-flex items-center gap-2">
           <span className="h-3.5 w-3.5 rounded-sm border border-[var(--ink)]/15 bg-white" />
           Запись (подтверждена)
-        </span>
-        <span className="inline-flex items-center gap-2">
-          <span className="h-3.5 w-3.5 rounded-sm bg-[var(--accent-deep)]" />
-          Запись в работе
-        </span>
-        <span className="inline-flex items-center gap-2">
-          <span className="h-3.5 w-3.5 rounded-sm bg-[#f4e8c8]" />
-          Запись ожидает
         </span>
         <span>
           {readOnly
@@ -752,21 +760,26 @@ function DetailPanel({
   block,
   posts,
   catalog,
+  customers,
   readOnly = false,
   showFinance = false,
   onClose,
   onSaved,
+  onRemoved,
   onError,
 }: {
   block: DeskBlock;
   posts: Post[];
   catalog: ServiceOpt[];
+  customers: CustomerOpt[];
   readOnly?: boolean;
   showFinance?: boolean;
   onClose: () => void;
   onSaved: (block: DeskBlock) => void;
+  onRemoved: (id: string) => void;
   onError: (msg: string) => void;
 }) {
+  const router = useRouter();
   const [postId, setPostId] = useState(block.postId);
   const [startsLocal, setStartsLocal] = useState(localInputValue(block.startsAt));
   const [durationMin, setDurationMin] = useState(block.durationMin);
@@ -786,6 +799,21 @@ function DetailPanel({
   );
   const [amountTouched, setAmountTouched] = useState(false);
   const [pending, setPending] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [arriveVehicleId, setArriveVehicleId] = useState(
+    block.vehicleId ?? "",
+  );
+
+  const bookingCustomer = useMemo(() => {
+    if (block.kind !== "booking") return null;
+    if (block.customerId) {
+      return customers.find((c) => c.id === block.customerId) ?? null;
+    }
+    return null;
+  }, [block, customers]);
+
+  const bookingVehicles = bookingCustomer?.vehicles ?? [];
 
   useEffect(() => {
     setPostId(block.postId);
@@ -793,6 +821,9 @@ function DetailPanel({
     setDurationMin(block.durationMin);
     setStatus(block.status);
     setVehicleInfo(block.vehicleInfo);
+    setArriveVehicleId(block.vehicleId ?? "");
+    setCancelOpen(false);
+    setCancelReason("");
     const lines = (block.lineItems ?? []).map((l) => ({
       serviceId: l.serviceId,
       name: l.name,
@@ -912,6 +943,46 @@ function DetailPanel({
       });
     }
   }
+
+  async function cancelBooking() {
+    setPending(true);
+    const result = await cancelDeskBooking({
+      id: block.id,
+      reason: cancelReason,
+    });
+    setPending(false);
+    if (!result.ok) {
+      onError(result.error);
+      return;
+    }
+    onRemoved(block.id);
+  }
+
+  async function arriveAndCreateWorkOrder() {
+    if (bookingVehicles.length > 1 && !arriveVehicleId) {
+      onError("Выберите автомобиль для заказ-наряда");
+      return;
+    }
+    setPending(true);
+    const result = await createWorkOrderFromBooking({
+      bookingId: block.id,
+      vehicleId: arriveVehicleId || undefined,
+    });
+    setPending(false);
+    if (!result.ok) {
+      onError(result.error);
+      return;
+    }
+    onRemoved(block.id);
+    if (result.workOrderId) {
+      router.push(`/owner/work-orders/${result.workOrderId}`);
+    }
+  }
+
+  const canArrive =
+    block.kind === "booking" &&
+    !block.workOrderId &&
+    block.status !== "CANCELLED";
 
   const heading =
     block.kind === "work_order" && block.workOrderNumber
@@ -1096,13 +1167,13 @@ function DetailPanel({
                   className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
                 >
                   {block.kind === "booking"
-                    ? Object.entries(bookingStatusLabel).map(
-                        ([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ),
-                      )
+                    ? selectableBookingStatuses(
+                        block.status as BookingStatus,
+                      ).map((value) => (
+                        <option key={value} value={value}>
+                          {bookingStatusLabel[value]}
+                        </option>
+                      ))
                     : selectableWorkOrderStatuses(
                         block.status as WorkOrderStatus,
                       ).map((value) => (
@@ -1113,6 +1184,78 @@ function DetailPanel({
                 </select>
               </label>
             </div>
+
+            {canArrive ? (
+              <div className="mt-5 rounded-lg border border-[var(--line)] bg-[var(--paper)]/60 p-4">
+                <p className="text-sm font-semibold text-[var(--ink)]">
+                  Клиент приехал
+                </p>
+                <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                  Создать заказ-наряд из этой записи и открыть карточку ЗН.
+                </p>
+                {bookingVehicles.length > 1 ? (
+                  <label className="mt-3 block text-sm">
+                    <span className="mb-1.5 block font-semibold">Авто</span>
+                    <select
+                      value={arriveVehicleId}
+                      onChange={(e) => setArriveVehicleId(e.target.value)}
+                      className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                    >
+                      <option value="">Выберите автомобиль</option>
+                      {bookingVehicles.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {vehicleLabel(v)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => void arriveAndCreateWorkOrder()}
+                  className="mt-3 min-h-11 cursor-pointer rounded-md bg-[var(--teal)] px-5 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {pending ? "Создание…" : "Создать заказ-наряд"}
+                </button>
+              </div>
+            ) : null}
+
+            {block.kind === "booking" && cancelOpen ? (
+              <div className="mt-5 rounded-lg border border-[var(--line)] bg-white p-4">
+                <p className="text-sm font-semibold text-[var(--ink)]">
+                  Причина отмены
+                </p>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  rows={3}
+                  placeholder="Например: клиент передумал / не отвечает"
+                  className="mt-2 w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"
+                />
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => void cancelBooking()}
+                    className="min-h-11 cursor-pointer rounded-md bg-[var(--accent-deep)] px-5 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    Подтвердить отмену
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => {
+                      setCancelOpen(false);
+                      setCancelReason("");
+                    }}
+                    className="min-h-11 cursor-pointer rounded-md border border-[var(--line)] px-5 text-sm font-semibold"
+                  >
+                    Назад
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-5 flex flex-wrap gap-3">
               <button
@@ -1130,6 +1273,16 @@ function DetailPanel({
                 >
                   Полная карточка ЗН
                 </a>
+              ) : null}
+              {block.kind === "booking" && !cancelOpen ? (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setCancelOpen(true)}
+                  className="min-h-11 cursor-pointer rounded-md border border-[var(--line)] px-5 text-sm font-semibold text-[var(--accent-deep)]"
+                >
+                  Отменить запись
+                </button>
               ) : null}
             </div>
           </>
@@ -1338,6 +1491,7 @@ function CreatePanel({
       newCustomerName: isNewClient ? newName : undefined,
       newCustomerPhone: isNewClient ? phoneQuery : undefined,
       vehicleInfo: resolvedVehicleInfo,
+      vehicleId: vehicleId || undefined,
     });
     setPending(false);
     if (!result.ok || !result.id) {
@@ -1360,6 +1514,9 @@ function CreatePanel({
       vehicleInfo: resolvedVehicleInfo,
       services: names,
       plannedAmountRub: result.plannedAmountRub ?? plannedAmount,
+      customerId: result.customerId ?? matchedCustomer?.id ?? null,
+      vehicleId: result.vehicleId ?? (vehicleId || null),
+      workOrderId: null,
       lineItems: selected,
     });
   }

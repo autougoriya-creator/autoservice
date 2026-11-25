@@ -22,31 +22,18 @@ export default async function ClientCabinetPage() {
     where: { organizationId: orgId, userId: session.id },
   });
 
-  const [nextBooking, nextClientOrder, lastWorkOrder] = await Promise.all([
+  const [nextBooking, lastWorkOrder] = await Promise.all([
     prisma.booking.findFirst({
       where: {
         organizationId: orgId,
         clientId: session.id,
         startsAt: { gte: new Date() },
-        status: { in: ["PENDING", "CONFIRMED"] },
+        status: { in: ["NEW", "NEW_FROM_CLIENT", "CONFIRMED"] },
+        workOrderId: null,
       },
       include: { post: true },
       orderBy: { startsAt: "asc" },
     }),
-    customer
-      ? prisma.workOrder.findFirst({
-          where: {
-            organizationId: orgId,
-            customerId: customer.id,
-            scheduledAt: { gte: new Date() },
-            status: {
-              in: ["NEW_FROM_CLIENT", "NEW", "CONFIRMED"],
-            },
-          },
-          include: { lines: true, vehicle: true, post: true },
-          orderBy: { scheduledAt: "asc" },
-        })
-      : Promise.resolve(null),
     customer
       ? prisma.workOrder.findFirst({
           where: { organizationId: orgId, customerId: customer.id },
@@ -55,14 +42,6 @@ export default async function ClientCabinetPage() {
         })
       : Promise.resolve(null),
   ]);
-
-  const upcomingFromSelf =
-    nextClientOrder &&
-    (!nextBooking ||
-      (nextClientOrder.scheduledAt &&
-        nextClientOrder.scheduledAt <= nextBooking.startsAt))
-      ? nextClientOrder
-      : null;
 
   return (
     <div>
@@ -81,30 +60,7 @@ export default async function ClientCabinetPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
             Ближайшая запись
           </p>
-          {upcomingFromSelf ? (
-            <div className="mt-4">
-              <p className="brand-mark text-2xl text-[var(--ink)]">
-                {upcomingFromSelf.lines.map((l) => l.name).join(", ")}
-              </p>
-              <p className="mt-2 text-sm text-[var(--ink-soft)]">
-                {upcomingFromSelf.scheduledAt
-                  ? formatDateTime(upcomingFromSelf.scheduledAt)
-                  : ""}
-                {upcomingFromSelf.post
-                  ? ` · ${upcomingFromSelf.post.name}`
-                  : ""}
-              </p>
-              <p className="mt-1 text-sm text-[var(--ink-soft)]">
-                {upcomingFromSelf.vehicle.make} {upcomingFromSelf.vehicle.model}{" "}
-                · {upcomingFromSelf.vehicle.plate}
-              </p>
-              <div className="mt-4">
-                <StatusPill tone={workOrderStatusTone(upcomingFromSelf.status)}>
-                  {workOrderStatusLabel[upcomingFromSelf.status]}
-                </StatusPill>
-              </div>
-            </div>
-          ) : nextBooking ? (
+          {nextBooking ? (
             <div className="mt-4">
               <p className="brand-mark text-2xl text-[var(--ink)]">
                 {nextBooking.serviceName}
@@ -119,7 +75,15 @@ export default async function ClientCabinetPage() {
                 </p>
               ) : null}
               <div className="mt-4">
-                <StatusPill tone="ok">
+                <StatusPill
+                  tone={
+                    nextBooking.status === "CONFIRMED"
+                      ? "ok"
+                      : nextBooking.status === "NEW_FROM_CLIENT"
+                        ? "warn"
+                        : "warn"
+                  }
+                >
                   {bookingStatusLabel[nextBooking.status]}
                 </StatusPill>
               </div>

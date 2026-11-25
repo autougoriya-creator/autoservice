@@ -402,6 +402,11 @@ async function main() {
     /** optional override of catalog sum */
     plannedAmountRub?: number;
     durationMin?: number;
+    customerId?: string;
+    vehicleId?: string;
+    workOrderId?: string;
+    cancelReason?: string;
+    cancelledAt?: Date;
   }) {
     const lines = opts.serviceNames.map((name) => {
       const s = svc[name];
@@ -424,17 +429,22 @@ async function main() {
         lines.reduce((sum, l) => sum + l.durationMin * l.quantity, 0),
       );
     const serviceName = opts.serviceNames.join(", ");
-    await prisma.booking.create({
+    return prisma.booking.create({
       data: {
         organizationId: org.id,
         clientId: clientUser.id,
+        customerId: opts.customerId,
         postId: opts.postId,
         serviceName,
         plannedAmountRub,
         vehicleInfo: opts.vehicleInfo,
+        vehicleId: opts.vehicleId,
         startsAt: opts.startsAt,
         durationMin,
         status: opts.status,
+        workOrderId: opts.workOrderId,
+        cancelReason: opts.cancelReason,
+        cancelledAt: opts.cancelledAt,
         lines: { create: lines },
       },
     });
@@ -443,24 +453,12 @@ async function main() {
   // Dense day occupancy with catalog prices for план выручки
   await seedBooking({
     postId: posts[0].id,
-    startsAt: at(8, 0),
-    status: BookingStatus.DONE,
-    vehicleInfo: "Toyota Camry · А123ВС777",
-    serviceNames: ["Экспресс-мойка"],
-  });
-  await seedBooking({
-    postId: posts[0].id,
-    startsAt: at(9, 0),
-    status: BookingStatus.IN_PROGRESS,
-    vehicleInfo: "Kia Sportage · К456ОР777",
-    serviceNames: ["Комплексная мойка", "Пылесос салона"],
-  });
-  await seedBooking({
-    postId: posts[0].id,
     startsAt: at(11, 0),
     status: BookingStatus.CONFIRMED,
     vehicleInfo: "Toyota Camry · А123ВС777",
     serviceNames: ["Комплексная мойка"],
+    customerId: customerAlex.id,
+    vehicleId: camry.id,
   });
   await seedBooking({
     postId: posts[0].id,
@@ -468,20 +466,17 @@ async function main() {
     status: BookingStatus.CONFIRMED,
     vehicleInfo: "Lada Vesta · В321АА50",
     serviceNames: ["Пылесос салона"],
+    customerId: customerIvan.id,
+    vehicleId: vesta.id,
   });
   await seedBooking({
     postId: posts[0].id,
     startsAt: at(16, 30),
-    status: BookingStatus.PENDING,
+    status: BookingStatus.NEW,
     vehicleInfo: "Toyota Camry · А123ВС777",
     serviceNames: ["Экспресс-мойка"],
-  });
-  await seedBooking({
-    postId: posts[1].id,
-    startsAt: at(8, 30),
-    status: BookingStatus.DONE,
-    vehicleInfo: "Volkswagen Polo · М789ТУ199",
-    serviceNames: ["Комплексная мойка"],
+    customerId: customerAlex.id,
+    vehicleId: camry.id,
   });
   await seedBooking({
     postId: posts[1].id,
@@ -489,6 +484,8 @@ async function main() {
     status: BookingStatus.CONFIRMED,
     vehicleInfo: "Kia Sportage · К456ОР777",
     serviceNames: ["Мойка двигателя"],
+    customerId: customerAlex.id,
+    vehicleId: sportage.id,
   });
   await seedBooking({
     postId: posts[1].id,
@@ -496,28 +493,27 @@ async function main() {
     status: BookingStatus.CONFIRMED,
     vehicleInfo: "Lada Vesta · В321АА50",
     serviceNames: ["Экспресс-мойка"],
+    customerId: customerIvan.id,
+    vehicleId: vesta.id,
   });
   await seedBooking({
     postId: posts[1].id,
     startsAt: at(15, 0),
-    status: BookingStatus.PENDING,
+    status: BookingStatus.NEW,
     vehicleInfo: "Volkswagen Polo · М789ТУ199",
     serviceNames: ["Комплексная мойка", "Экспресс-мойка"],
     plannedAmountRub: 1700,
+    customerId: customerMaria.id,
+    vehicleId: polo.id,
   });
   await seedBooking({
     postId: posts[1].id,
     startsAt: at(18, 0),
-    status: BookingStatus.PENDING,
+    status: BookingStatus.NEW,
     vehicleInfo: "Toyota Camry · А123ВС777",
     serviceNames: ["Экспресс-мойка"],
-  });
-  await seedBooking({
-    postId: posts[2].id,
-    startsAt: at(9, 0),
-    status: BookingStatus.IN_PROGRESS,
-    vehicleInfo: "Toyota Camry · А123ВС777",
-    serviceNames: ["Химчистка салона"],
+    customerId: customerAlex.id,
+    vehicleId: camry.id,
   });
   await seedBooking({
     postId: posts[2].id,
@@ -525,13 +521,48 @@ async function main() {
     status: BookingStatus.CONFIRMED,
     vehicleInfo: "Volkswagen Polo · М789ТУ199",
     serviceNames: ["Полировка кузова"],
+    customerId: customerMaria.id,
+    vehicleId: polo.id,
   });
   await seedBooking({
     postId: posts[2].id,
     startsAt: tomorrow,
-    status: BookingStatus.PENDING,
+    status: BookingStatus.NEW_FROM_CLIENT,
     vehicleInfo: "Toyota Camry · А123ВС777",
     serviceNames: ["Полировка кузова", "Мойка двигателя"],
+    customerId: customerAlex.id,
+    vehicleId: camry.id,
+  });
+  await seedBooking({
+    postId: posts[2].id,
+    startsAt: at(13, 0),
+    status: BookingStatus.NEW_FROM_CLIENT,
+    vehicleInfo: "Kia Sportage · К456ОР777",
+    serviceNames: ["Пылесос салона"],
+    customerId: customerAlex.id,
+    vehicleId: sportage.id,
+  });
+  await seedBooking({
+    postId: posts[0].id,
+    startsAt: at(8, 0),
+    status: BookingStatus.CANCELLED,
+    vehicleInfo: "Toyota Camry · А123ВС777",
+    serviceNames: ["Экспресс-мойка"],
+    customerId: customerAlex.id,
+    vehicleId: camry.id,
+    cancelReason: "Клиент передумал",
+    cancelledAt: at(7, 30),
+  });
+  await seedBooking({
+    postId: posts[1].id,
+    startsAt: at(9, 0),
+    status: BookingStatus.CANCELLED,
+    vehicleInfo: "Volkswagen Polo · М789ТУ199",
+    serviceNames: ["Комплексная мойка"],
+    customerId: customerMaria.id,
+    vehicleId: polo.id,
+    cancelReason: "Не отвечает на звонок",
+    cancelledAt: at(8, 45),
   });
 
   const classPriceByService = new Map(
@@ -603,6 +634,32 @@ async function main() {
   const closedToday2 = at(11, 40);
   const closedOld = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
+  const woClosedMaria = await createWorkOrder({
+    customerId: customerMaria.id,
+    vehicleId: polo.id,
+    status: WorkOrderStatus.CLOSED,
+    completedAt: closedToday,
+    paidAt: closedToday,
+    paymentMethod: PaymentMethod.CASH,
+    postId: posts[1].id,
+    scheduledAt: closedToday,
+    notes: "Оплата наличными сегодня · из записи",
+    lines: [{ serviceId: services[0].id }],
+  });
+
+  const woClosedIvan = await createWorkOrder({
+    customerId: customerIvan.id,
+    vehicleId: vesta.id,
+    status: WorkOrderStatus.CLOSED,
+    completedAt: closedToday2,
+    paidAt: closedToday2,
+    paymentMethod: PaymentMethod.CASH_AND_TERMINAL,
+    postId: posts[0].id,
+    scheduledAt: closedToday2,
+    notes: "Часть налом, часть терминалом · из записи",
+    lines: [{ serviceId: services[1].id }],
+  });
+
   await createWorkOrder({
     customerId: customerAlex.id,
     vehicleId: camry.id,
@@ -629,30 +686,26 @@ async function main() {
     lines: [{ serviceId: services[2].id }],
   });
 
-  await createWorkOrder({
+  // Записи, закрытые через ЗН (для аналитики OWNER)
+  await seedBooking({
+    postId: posts[1].id,
+    startsAt: closedToday,
+    status: BookingStatus.CONFIRMED,
+    vehicleInfo: "Volkswagen Polo · М789ТУ199",
+    serviceNames: ["Экспресс-мойка"],
     customerId: customerMaria.id,
     vehicleId: polo.id,
-    status: WorkOrderStatus.CLOSED,
-    completedAt: closedToday,
-    paidAt: closedToday,
-    paymentMethod: PaymentMethod.CASH,
-    postId: posts[1].id,
-    scheduledAt: closedToday,
-    notes: "Оплата наличными сегодня",
-    lines: [{ serviceId: services[0].id }],
+    workOrderId: woClosedMaria.id,
   });
-
-  await createWorkOrder({
+  await seedBooking({
+    postId: posts[0].id,
+    startsAt: closedToday2,
+    status: BookingStatus.CONFIRMED,
+    vehicleInfo: "Lada Vesta · В321АА50",
+    serviceNames: ["Комплексная мойка"],
     customerId: customerIvan.id,
     vehicleId: vesta.id,
-    status: WorkOrderStatus.CLOSED,
-    completedAt: closedToday2,
-    paidAt: closedToday2,
-    paymentMethod: PaymentMethod.CASH_AND_TERMINAL,
-    postId: posts[0].id,
-    scheduledAt: closedToday2,
-    notes: "Часть налом, часть терминалом",
-    lines: [{ serviceId: services[1].id }],
+    workOrderId: woClosedIvan.id,
   });
 
   await createWorkOrder({
@@ -687,16 +740,6 @@ async function main() {
     scheduledAt: at(18, 30),
     notes: "Новый ЗН — общий вид для админа и мойщика",
     lines: [{ serviceId: services[1].id }],
-  });
-
-  await createWorkOrder({
-    customerId: customerAlex.id,
-    vehicleId: sportage.id,
-    status: WorkOrderStatus.NEW_FROM_CLIENT,
-    postId: posts[2].id,
-    scheduledAt: at(13, 0),
-    notes: "Заявка от клиента — детейлинг. Далее: подтвердить → в работе → закрыть",
-    lines: [{ serviceId: services[5].id }],
   });
 
   // Keep legacy Order rows for older stub screens if any remain

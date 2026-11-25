@@ -22,6 +22,10 @@ export type BoardBlock = {
   services: string[];
   workOrderNumber?: number;
   plannedAmountRub?: number;
+  /** Booking → Customer (для создания ЗН) */
+  customerId?: string | null;
+  vehicleId?: string | null;
+  workOrderId?: string | null;
   lineItems?: {
     serviceId: string | null;
     name: string;
@@ -46,6 +50,9 @@ export type DeskBlock = {
   services: string[];
   workOrderNumber?: number;
   plannedAmountRub?: number;
+  customerId?: string | null;
+  vehicleId?: string | null;
+  workOrderId?: string | null;
   lineItems?: {
     serviceId: string | null;
     name: string;
@@ -70,6 +77,9 @@ export function toDeskBlock(block: BoardBlock): DeskBlock {
     services: block.services,
     workOrderNumber: block.workOrderNumber,
     plannedAmountRub: block.plannedAmountRub,
+    customerId: block.customerId,
+    vehicleId: block.vehicleId,
+    workOrderId: block.workOrderId,
     lineItems: block.lineItems,
   };
 }
