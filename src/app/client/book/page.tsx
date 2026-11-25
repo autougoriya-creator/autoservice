@@ -51,6 +51,7 @@ export default async function ClientBookPage() {
       where: {
         organizationId: orgId,
         startsAt: { gte: new Date(), lte: horizon },
+        workOrderId: null,
       },
       select: {
         startsAt: true,
@@ -66,9 +67,9 @@ export default async function ClientBookPage() {
   ]);
 
   const bookingBusyStatuses = new Set([
-    "PENDING",
+    "NEW",
+    "NEW_FROM_CLIENT",
     "CONFIRMED",
-    "IN_PROGRESS",
   ]);
   const woBusyStatuses = new Set([
     "NEW",
@@ -110,7 +111,7 @@ export default async function ClientBookPage() {
       <SectionTitle
         eyebrow="Запись"
         title="Онлайн-запись"
-        description="Выберите услугу, автомобиль и свободный слот. Заявка придёт со статусом «Новый от клиента»."
+        description="Выберите услугу, автомобиль и свободный слот. Заявка придёт со статусом «Новая от клиента» — заказ-наряд создадут, когда вы приедете."
       />
 
       <ClientBookingForm

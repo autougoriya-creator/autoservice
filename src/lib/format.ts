@@ -31,12 +31,27 @@ export function formatDate(date: Date) {
 }
 
 export const bookingStatusLabel: Record<string, string> = {
-  PENDING: "Ожидает",
+  NEW: "Новая",
+  NEW_FROM_CLIENT: "Новая от клиента",
   CONFIRMED: "Подтверждена",
-  IN_PROGRESS: "В работе",
-  DONE: "Готово",
   CANCELLED: "Отменена",
 };
+
+export function bookingStatusTone(
+  status: string,
+): "neutral" | "ok" | "warn" | "accent" {
+  switch (status) {
+    case "CONFIRMED":
+      return "ok";
+    case "NEW":
+    case "NEW_FROM_CLIENT":
+      return "warn";
+    case "CANCELLED":
+      return "neutral";
+    default:
+      return "neutral";
+  }
+}
 
 export const roleLabel: Record<string, string> = {
   OWNER: "Владелец",

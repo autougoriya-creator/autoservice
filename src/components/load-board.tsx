@@ -24,10 +24,8 @@ function blockTone(kind: BoardBlock["kind"], status: string) {
       return "bg-[#1a3a4a] text-white border-transparent";
     return "bg-[#243d4a] text-white border-transparent";
   }
-  if (status === "IN_PROGRESS")
-    return "bg-[var(--accent-deep)] text-white border-transparent";
-  if (status === "DONE")
-    return "bg-[var(--teal-soft)] text-[var(--teal)] border-transparent";
+  if (status === "NEW_FROM_CLIENT")
+    return "bg-[#9a6b16] text-white border-transparent";
   if (status === "CONFIRMED")
     return "bg-white text-[var(--ink)] border-[var(--ink)]/15 shadow-sm";
   return "bg-[#f4e8c8] text-[#7a5a12] border-transparent";
@@ -181,12 +179,16 @@ export function LoadBoardLegend() {
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-2 border-t border-[var(--line)] pt-3 text-xs text-[var(--ink-soft)]">
         <span className="inline-flex items-center gap-2">
-          <span className="h-3.5 w-3.5 rounded-sm border border-[var(--ink)]/15 bg-white" />
-          Запись подтверждена
+          <span className="h-3.5 w-3.5 rounded-sm bg-[#f4e8c8]" />
+          Запись новая
         </span>
         <span className="inline-flex items-center gap-2">
-          <span className="h-3.5 w-3.5 rounded-sm bg-[var(--accent-deep)]" />
-          Запись в работе
+          <span className="h-3.5 w-3.5 rounded-sm bg-[#9a6b16]" />
+          Запись от клиента
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3.5 w-3.5 rounded-sm border border-[var(--ink)]/15 bg-white" />
+          Запись подтверждена
         </span>
         <span className="inline-flex items-center gap-2">
           <span className="h-3.5 w-3.5 rounded-sm border border-dashed border-[var(--line)] bg-white/60" />

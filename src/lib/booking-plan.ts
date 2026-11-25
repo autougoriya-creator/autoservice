@@ -1,12 +1,8 @@
 import { periodBounds, type PeriodKey } from "@/lib/payroll";
 import { prisma } from "@/lib/prisma";
 
-const ACTIVE_BOOKING = new Set([
-  "PENDING",
-  "CONFIRMED",
-  "IN_PROGRESS",
-  "DONE",
-]);
+/** Активные записи (ещё не отменены) — для плана выручки */
+const ACTIVE_BOOKING = new Set(["NEW", "NEW_FROM_CLIENT", "CONFIRMED"]);
 
 export function bookingLinesTotal(
   lines: { priceRub: number; quantity: number }[],

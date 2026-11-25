@@ -42,7 +42,8 @@ export default async function PostsBoardPage() {
       include: {
         bookings: {
           where: {
-            status: { in: ["PENDING", "CONFIRMED", "IN_PROGRESS"] },
+            status: { in: ["NEW", "NEW_FROM_CLIENT", "CONFIRMED"] },
+            workOrderId: null,
             startsAt: {
               gte: new Date(Date.now() - 2 * 60 * 60 * 1000),
             },
@@ -82,7 +83,9 @@ export default async function PostsBoardPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         {posts.map((post) => {
-          const busy = post.bookings.some((b) => b.status === "IN_PROGRESS");
+          const busy = post.bookings.some(
+            (b) => b.status === "CONFIRMED" || b.status === "NEW_FROM_CLIENT",
+          );
           const upcoming = post.bookings[0];
           const shareSum = post.postAssignments.reduce(
             (s, a) => s + a.sharePercent,

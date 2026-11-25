@@ -17,11 +17,11 @@ enum Role {
   CLIENT
 }
 
+/// Статусы записи (визита). ЗН создаётся отдельно, когда клиент приехал.
 enum BookingStatus {
-  PENDING
+  NEW
+  NEW_FROM_CLIENT
   CONFIRMED
-  IN_PROGRESS
-  DONE
   CANCELLED
 }
 
@@ -190,24 +190,39 @@ model Booking {
   id               String        @id @default(cuid())
   organizationId   String
   clientId         String
+  /// Клиент справочника (для создания ЗН из записи)
+  customerId       String?
   postId           String?
   /// Сводка услуг для списков / совместимости
   serviceName      String
   /// Плановая сумма записи, ₽ (из каталога, можно править)
   plannedAmountRub Int           @default(0)
   vehicleInfo      String?
+  /// Авто из справочника (если выбрано при записи)
+  vehicleId        String?
   startsAt         DateTime
   durationMin      Int           @default(60)
-  status           BookingStatus @default(PENDING)
+  status           BookingStatus @default(NEW)
+  /// Обязательна при отмене
+  cancelReason     String?
+  cancelledAt      DateTime?
+  /// ЗН, созданный из этой записи (клиент приехал)
+  workOrderId      String?       @unique
   createdAt        DateTime      @default(now())
 
   organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client       User          @relation("ClientBookings", fields: [clientId], references: [id])
+  customer     Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  vehicle      Vehicle?      @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
   post         ServicePost?  @relation(fields: [postId], references: [id])
+  workOrder    WorkOrder?    @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
   lines        BookingLine[]
 
   @@index([organizationId, startsAt])
+  @@index([organizationId, status])
   @@index([clientId])
+  @@index([customerId])
+  @@index([vehicleId])
   @@index([postId, startsAt])
 }
 
@@ -264,6 +279,7 @@ model Customer {
   user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   vehicles     Vehicle[]
   workOrders   WorkOrder[]
+  bookings     Booking[]
 
   @@unique([organizationId, phone])
   @@index([organizationId])
@@ -308,6 +324,7 @@ model Vehicle {
   customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
   vehicleClass VehicleClass? @relation(fields: [vehicleClassId], references: [id], onDelete: SetNull)
   workOrders   WorkOrder[]
+  bookings     Booking[]
 
   @@index([organizationId])
   @@index([customerId])
@@ -447,6 +464,8 @@ model WorkOrder {
   post           ServicePost?    @relation(fields: [postId], references: [id], onDelete: SetNull)
   lines          WorkOrderLine[]
   stockMovements StockMovement[]
+  /// Запись, из которой создан этот ЗН (если есть)
+  sourceBooking  Booking?
 
   @@unique([organizationId, number])
   @@index([organizationId, status])
