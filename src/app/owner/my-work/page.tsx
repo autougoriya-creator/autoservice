@@ -161,7 +161,12 @@ export default async function MyWorkPage({
             {periodWOs.map((wo) => (
               <tr key={wo.id}>
                 <td className="px-4 py-3 font-medium">
-                  {workOrderNumberLabel(wo.number)}
+                  <Link
+                    href={`/owner/work-orders/${wo.id}`}
+                    className="hover:text-[var(--accent)]"
+                  >
+                    {workOrderNumberLabel(wo.number)}
+                  </Link>
                 </td>
                 <td className="px-4 py-3 text-[var(--ink-soft)]">
                   {wo.postName}

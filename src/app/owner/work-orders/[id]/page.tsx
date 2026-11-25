@@ -5,6 +5,7 @@ import {
   updateWorkOrderNotes,
   updateWorkOrderStatus,
 } from "@/app/actions/work-orders";
+import { WorkOrderAddLineForm } from "@/components/work-order-add-line-form";
 import { prisma } from "@/lib/prisma";
 import {
   formatDateTime,
@@ -13,8 +14,11 @@ import {
   workOrderStatusLabel,
   workOrderStatusTone,
 } from "@/lib/format";
+import { vehicleClassLabel } from "@/lib/pricing";
 import {
+  canMarkWorkOrderInProgress,
   formatDuration,
+  selectableWorkOrderStatuses,
   workOrderDuration,
   workOrderNumberLabel,
   workOrderTotal,
@@ -37,21 +41,36 @@ export default async function WorkOrderDetailPage({
   const organizationId = orgIdOf(session);
   const { id } = await params;
 
-  const workOrder = await prisma.workOrder.findFirst({
-    where: { id, organizationId },
-    include: {
-      customer: true,
-      vehicle: true,
-      lines: { orderBy: { name: "asc" } },
-      organization: true,
-    },
-  });
+  const [workOrder, services] = await Promise.all([
+    prisma.workOrder.findFirst({
+      where: { id, organizationId },
+      include: {
+        customer: true,
+        vehicle: { include: { vehicleClass: true } },
+        lines: { orderBy: { name: "asc" } },
+        organization: true,
+      },
+    }),
+    prisma.service.findMany({
+      where: { organizationId, isActive: true },
+      include: { classPrices: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   if (!workOrder) notFound();
 
   const total = workOrderTotal(workOrder.lines);
   const duration = workOrderDuration(workOrder.lines);
-  const canArrive = workOrder.status !== "IN_PROGRESS" && workOrder.status !== "CLOSED";
+  const canArrive = canMarkWorkOrderInProgress(workOrder.status);
+  const canAddLine = workOrder.status !== "CLOSED";
+  const statusOptions = selectableWorkOrderStatuses(workOrder.status);
+  const roleLabel =
+    session.membership.role === "STAFF"
+      ? "Мойщик / сотрудник"
+      : session.membership.role === "ADMIN"
+        ? "Администратор"
+        : "Владелец";
 
   return (
     <div className="space-y-6">
@@ -59,7 +78,7 @@ export default async function WorkOrderDetailPage({
         <SectionTitle
           eyebrow="Заказ-наряд"
           title={workOrderNumberLabel(workOrder.number)}
-          description={`${workOrder.organization.name} · создан ${formatDateTime(workOrder.createdAt)}`}
+          description={`${workOrder.organization.name} · создан ${formatDateTime(workOrder.createdAt)} · общий вид для админа и мойщика (${roleLabel})`}
         />
         <div className="flex flex-wrap gap-2">
           <StatusPill tone={workOrderStatusTone(workOrder.status)}>
@@ -99,30 +118,38 @@ export default async function WorkOrderDetailPage({
           <p className="mt-1 text-sm text-[var(--ink-soft)]">
             {workOrder.vehicle.plate}
             {workOrder.vehicle.color ? ` · ${workOrder.vehicle.color}` : ""}
+            {" · "}
+            {vehicleClassLabel(workOrder.vehicle.vehicleClass)}
           </p>
         </FormCard>
       </div>
 
       <FormCard>
         <h2 className="brand-mark mb-4 text-lg">Услуги</h2>
-        <ul className="divide-y divide-[var(--line)]">
-          {workOrder.lines.map((line) => (
-            <li
-              key={line.id}
-              className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div>
-                <p className="font-medium text-[var(--ink)]">{line.name}</p>
-                <p className="text-xs text-[var(--ink-soft)]">
-                  {formatDuration(line.durationMin)} × {line.quantity}
+        {workOrder.lines.length === 0 ? (
+          <p className="py-2 text-sm text-[var(--ink-soft)]">
+            Услуг пока нет — добавьте строку ниже.
+          </p>
+        ) : (
+          <ul className="divide-y divide-[var(--line)]">
+            {workOrder.lines.map((line) => (
+              <li
+                key={line.id}
+                className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="font-medium text-[var(--ink)]">{line.name}</p>
+                  <p className="text-xs text-[var(--ink-soft)]">
+                    {formatDuration(line.durationMin)} × {line.quantity}
+                  </p>
+                </div>
+                <p className="font-semibold text-[var(--ink)]">
+                  {formatRub(line.priceRub * line.quantity)}
                 </p>
-              </div>
-              <p className="font-semibold text-[var(--ink)]">
-                {formatRub(line.priceRub * line.quantity)}
-              </p>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="mt-4 flex items-end justify-between border-t border-[var(--line)] pt-4">
           <p className="text-sm text-[var(--ink-soft)]">
             Длительность: {formatDuration(duration)}
@@ -138,6 +165,14 @@ export default async function WorkOrderDetailPage({
           </p>
         ) : null}
       </FormCard>
+
+      {canAddLine ? (
+        <WorkOrderAddLineForm
+          workOrderId={workOrder.id}
+          vehicleClassId={workOrder.vehicle.vehicleClassId}
+          services={services}
+        />
+      ) : null}
 
       {canArrive ? (
         <FormCard>
@@ -155,15 +190,20 @@ export default async function WorkOrderDetailPage({
         <FormCard>
           <form action={updateWorkOrderStatus} className="space-y-4">
             <input type="hidden" name="id" value={workOrder.id} />
-            <Field label="Статус" htmlFor="status">
+            <Field
+              label="Статус"
+              htmlFor="status"
+              hint="Цепочка: новый / новый от клиента → подтверждён → в работе → закрыт"
+            >
               <TextSelect
                 id="status"
                 name="status"
                 defaultValue={workOrder.status}
+                disabled={statusOptions.length <= 1}
               >
-                {Object.entries(workOrderStatusLabel).map(([value, label]) => (
+                {statusOptions.map((value) => (
                   <option key={value} value={value}>
-                    {label}
+                    {workOrderStatusLabel[value]}
                   </option>
                 ))}
               </TextSelect>
@@ -198,9 +238,17 @@ export default async function WorkOrderDetailPage({
               </span>
             </label>
             <p className="text-xs text-[var(--ink-soft)]">
-              Закрытие заказ-наряда возможно только с указанием вида оплаты.
+              Закрытие заказ-наряда возможно только из статуса «В работе» и с
+              указанием вида оплаты. Администратор проверяет состав услуг при
+              проведении.
             </p>
-            <SubmitButton>Обновить статус</SubmitButton>
+            {statusOptions.length > 1 ? (
+              <SubmitButton>Обновить статус</SubmitButton>
+            ) : (
+              <p className="text-sm text-[var(--ink-soft)]">
+                Дальнейших переходов нет — заказ закрыт.
+              </p>
+            )}
           </form>
         </FormCard>
 
