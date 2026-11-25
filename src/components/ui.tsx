@@ -47,10 +47,14 @@ export function SubmitButton({
   children,
   variant = "primary",
   className = "",
+  name,
+  value,
 }: {
   children: ReactNode;
   variant?: "primary" | "ghost" | "dark";
   className?: string;
+  name?: string;
+  value?: string;
 }) {
   const base =
     "inline-flex w-full items-center justify-center gap-2 rounded-md px-5 py-3 text-sm font-semibold transition duration-200 cursor-pointer";
@@ -63,7 +67,12 @@ export function SubmitButton({
   }[variant];
 
   return (
-    <button type="submit" className={`${base} ${styles} ${className}`}>
+    <button
+      type="submit"
+      name={name}
+      value={value}
+      className={`${base} ${styles} ${className}`}
+    >
       {children}
     </button>
   );

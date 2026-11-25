@@ -39,8 +39,7 @@ import {
   workOrderStatusLabel,
 } from "@/lib/format";
 import { phoneDigits } from "@/lib/phone";
-import { selectableWorkOrderStatuses } from "@/lib/work-order";
-import type { BookingStatus, WorkOrderStatus } from "@prisma/client";
+import type { BookingStatus } from "@prisma/client";
 
 type Post = {
   id: string;
@@ -934,11 +933,12 @@ function DetailPanel({
         lineItems: selected,
       });
     } else {
+      // Сохранить пост/время без смены статуса ЗН
       const result = await updateDeskWorkOrder({
         id: block.id,
         postId,
         startsAtIso: startsAt.toISOString(),
-        status,
+        status: block.status,
       });
       setPending(false);
       if (!result.ok) {
@@ -949,9 +949,36 @@ function DetailPanel({
         ...block,
         postId,
         startsAt: startsAt.toISOString(),
-        status,
+        status: block.status,
       });
     }
+  }
+
+  async function closeWorkOrder() {
+    setPending(true);
+    const startsAt = new Date(startsLocal);
+    if (Number.isNaN(startsAt.getTime())) {
+      onError("Некорректное время");
+      setPending(false);
+      return;
+    }
+    const result = await updateDeskWorkOrder({
+      id: block.id,
+      postId,
+      startsAtIso: startsAt.toISOString(),
+      status: "CLOSED",
+    });
+    setPending(false);
+    if (!result.ok) {
+      onError(result.error);
+      return;
+    }
+    onSaved({
+      ...block,
+      postId,
+      startsAt: startsAt.toISOString(),
+      status: "CLOSED",
+    });
   }
 
   async function cancelBooking() {
@@ -1169,30 +1196,31 @@ function DetailPanel({
                   </label>
                 </>
               ) : null}
-              <label className="block text-sm">
-                <span className="mb-1.5 block font-semibold">Статус</span>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-                >
-                  {block.kind === "booking"
-                    ? selectableBookingStatuses(
-                        block.status as BookingStatus,
-                      ).map((value) => (
-                        <option key={value} value={value}>
-                          {bookingStatusLabel[value]}
-                        </option>
-                      ))
-                    : selectableWorkOrderStatuses(
-                        block.status as WorkOrderStatus,
-                      ).map((value) => (
-                        <option key={value} value={value}>
-                          {workOrderStatusLabel[value]}
-                        </option>
-                      ))}
-                </select>
-              </label>
+              {block.kind === "booking" ? (
+                <label className="block text-sm">
+                  <span className="mb-1.5 block font-semibold">Статус</span>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                  >
+                    {selectableBookingStatuses(
+                      block.status as BookingStatus,
+                    ).map((value) => (
+                      <option key={value} value={value}>
+                        {bookingStatusLabel[value]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="block text-sm">
+                  <span className="mb-1.5 block font-semibold">Статус</span>
+                  <p className="flex min-h-11 items-center rounded-md border border-[var(--line)] bg-[var(--paper)]/50 px-3 font-medium text-[var(--ink)]">
+                    {workOrderStatusLabel[block.status] ?? block.status}
+                  </p>
+                </div>
+              )}
             </div>
 
             {canArrive ? (
@@ -1276,6 +1304,16 @@ function DetailPanel({
               >
                 {pending ? "Сохранение…" : "Сохранить"}
               </button>
+              {block.kind === "work_order" && block.status !== "CLOSED" ? (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => void closeWorkOrder()}
+                  className="min-h-11 cursor-pointer rounded-md bg-[var(--accent)] px-5 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {pending ? "Закрытие…" : "Закрыть ЗН"}
+                </button>
+              ) : null}
               {block.kind === "work_order" ? (
                 <a
                   href={`/owner/work-orders/${block.id}`}

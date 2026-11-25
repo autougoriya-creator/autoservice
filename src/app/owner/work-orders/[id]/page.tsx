@@ -14,7 +14,6 @@ import {
 import { vehicleClassLabel } from "@/lib/pricing";
 import {
   formatDuration,
-  selectableWorkOrderStatuses,
   workOrderDuration,
   workOrderNumberLabel,
   workOrderTotal,
@@ -60,7 +59,6 @@ export default async function WorkOrderDetailPage({
   const total = workOrderTotal(workOrder.lines);
   const duration = workOrderDuration(workOrder.lines);
   const canAddLine = workOrder.status !== "CLOSED";
-  const statusOptions = selectableWorkOrderStatuses(workOrder.status);
   const roleLabel =
     session.membership.role === "STAFF"
       ? "Мойщик / сотрудник"
@@ -249,7 +247,6 @@ export default async function WorkOrderDetailPage({
         <WorkOrderStatusForm
           workOrderId={workOrder.id}
           status={workOrder.status}
-          statusOptions={statusOptions}
           paymentMethod={workOrder.paymentMethod}
           cashPaidRub={workOrder.cashPaidRub}
           terminalPaidRub={workOrder.terminalPaidRub}
