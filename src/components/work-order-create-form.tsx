@@ -13,7 +13,7 @@ import {
 import { formatRub } from "@/lib/format";
 import { formatDuration } from "@/lib/work-order";
 
-type CustomerOption = { id: string; name: string; phone: string | null };
+type CustomerOption = { id: string; name: string; phone: string };
 type VehicleOption = {
   id: string;
   customerId: string;
@@ -76,8 +76,7 @@ export function WorkOrderCreateForm({
           >
             {customers.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
-                {c.phone ? ` · ${c.phone}` : ""}
+                {c.phone} · {c.name}
               </option>
             ))}
           </TextSelect>

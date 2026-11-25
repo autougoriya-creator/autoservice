@@ -46,23 +46,32 @@ export const roleLabel: Record<string, string> = {
 };
 
 export const workOrderStatusLabel: Record<string, string> = {
-  DRAFT: "Черновик",
-  OPEN: "Открыт",
+  NEW: "Новый",
+  NEW_FROM_CLIENT: "Новый от клиента",
+  CONFIRMED: "Подтверждён",
   IN_PROGRESS: "В работе",
-  DONE: "Готов",
-  CANCELLED: "Отменён",
+  CLOSED: "Закрыт",
+};
+
+export const paymentMethodLabel: Record<string, string> = {
+  CASH: "Наличные",
+  TERMINAL: "Терминал",
+  INVOICE: "Счёт",
+  CASH_AND_TERMINAL: "Нал + терминал",
 };
 
 export function workOrderStatusTone(
   status: string,
 ): "neutral" | "ok" | "warn" | "accent" {
   switch (status) {
-    case "DONE":
+    case "CLOSED":
       return "ok";
     case "IN_PROGRESS":
       return "accent";
-    case "OPEN":
-    case "DRAFT":
+    case "CONFIRMED":
+      return "warn";
+    case "NEW":
+    case "NEW_FROM_CLIENT":
       return "warn";
     default:
       return "neutral";

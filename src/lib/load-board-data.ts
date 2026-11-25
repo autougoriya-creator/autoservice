@@ -9,7 +9,13 @@ const BOOKING_STATUSES = new Set([
   "DONE",
 ]);
 
-const WORK_ORDER_STATUSES = new Set(["OPEN", "IN_PROGRESS", "DONE"]);
+const WORK_ORDER_STATUSES = new Set([
+  "NEW",
+  "NEW_FROM_CLIENT",
+  "CONFIRMED",
+  "IN_PROGRESS",
+  "CLOSED",
+]);
 
 function inDay(date: Date | null | undefined, dayStart: Date, dayEnd: Date) {
   if (!date) return false;
@@ -157,7 +163,7 @@ export async function loadBoardOccupancy(
     customers: customers.map((c) => ({
       id: c.id,
       name: c.name,
-      phone: c.phone,
+      phone: c.phone as string,
     })),
     services: services.map((s) => ({
       id: s.id,

@@ -18,7 +18,7 @@ export default async function NewClientPage() {
       <SectionTitle
         eyebrow="Справочник"
         title="Новый клиент"
-        description="Имя обязательно. Телефон поможет быстро найти клиента на планшете."
+        description="Телефон обязателен и уникален в точке — это идентификатор клиента для аналитики."
       />
 
       <FormCard>
@@ -26,12 +26,13 @@ export default async function NewClientPage() {
           <Field label="Имя" htmlFor="name">
             <TextInput id="name" name="name" required placeholder="Иван Иванов" />
           </Field>
-          <Field label="Телефон" htmlFor="phone">
+          <Field label="Телефон (ID клиента)" htmlFor="phone">
             <TextInput
               id="phone"
               name="phone"
               type="tel"
-              placeholder="+7 (900) 000-00-00"
+              required
+              placeholder="+7 900 000-00-00"
             />
           </Field>
           <Field label="Email" htmlFor="email">

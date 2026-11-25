@@ -26,11 +26,19 @@ enum BookingStatus {
 }
 
 enum WorkOrderStatus {
-  DRAFT
-  OPEN
+  NEW
+  NEW_FROM_CLIENT
+  CONFIRMED
   IN_PROGRESS
-  DONE
-  CANCELLED
+  CLOSED
+}
+
+/// Вид оплаты заказ-наряда
+enum PaymentMethod {
+  CASH
+  TERMINAL
+  INVOICE
+  CASH_AND_TERMINAL
 }
 
 enum PayMode {
@@ -227,13 +235,14 @@ model Order {
   @@index([clientId])
 }
 
-/// Клиент справочника (CRM), опционально привязан к User для ЛК
+/// Клиент справочника (CRM): идентификатор = телефон (уникален в тенанте)
 model Customer {
   id             String   @id @default(cuid())
   organizationId String
   userId         String?
   name           String
-  phone          String?
+  /// Нормализованный телефон — уникальный ID клиента в организации
+  phone          String
   email          String?
   notes          String?
   createdAt      DateTime @default(now())
@@ -244,6 +253,7 @@ model Customer {
   vehicles     Vehicle[]
   workOrders   WorkOrder[]
 
+  @@unique([organizationId, phone])
   @@index([organizationId])
   @@index([userId])
   @@index([organizationId, phone])
@@ -293,12 +303,15 @@ model WorkOrder {
   id             String          @id @default(cuid())
   organizationId String
   number         Int
-  status         WorkOrderStatus @default(OPEN)
+  status         WorkOrderStatus @default(NEW)
   customerId     String
   vehicleId      String
   postId         String?
   scheduledAt    DateTime?
   notes          String?
+  /// Вид оплаты при закрытии
+  paymentMethod  PaymentMethod?
+  paidAt         DateTime?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   completedAt    DateTime?
@@ -311,6 +324,7 @@ model WorkOrder {
 
   @@unique([organizationId, number])
   @@index([organizationId, status])
+  @@index([organizationId, paidAt])
   @@index([customerId])
   @@index([vehicleId])
   @@index([postId, scheduledAt])
