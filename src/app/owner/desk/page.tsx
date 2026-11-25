@@ -161,28 +161,37 @@ export default async function ManagerDeskPage({
       />
 
       {staffView && posts.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-[var(--line)] bg-white/70 px-6 py-10 text-center text-sm text-[var(--ink-soft)]">
+        <div
+          id="desk-load-board"
+          className="rounded-xl border border-dashed border-[var(--line)] bg-white/70 px-6 py-10 text-center text-sm text-[var(--ink-soft)]"
+        >
           Вам ещё не закреплён пост. Обратитесь к владельцу или администратору.
         </div>
       ) : posts.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-[var(--line)] bg-white/70 px-6 py-10 text-center text-sm text-[var(--ink-soft)]">
+        <div
+          id="desk-load-board"
+          className="rounded-xl border border-dashed border-[var(--line)] bg-white/70 px-6 py-10 text-center text-sm text-[var(--ink-soft)]"
+        >
           Нет активных постов. Добавьте боксы в настройках точки.
         </div>
       ) : (
-        <InteractiveDesk
-          dayIso={dayStart.toISOString()}
-          posts={posts.map((p) => ({
-            id: p.id,
-            name: p.name,
-            workStartHour: p.workStartHour,
-            workEndHour: p.workEndHour,
-          }))}
-          initialBlocks={blocks.map(toDeskBlock)}
-          customers={customers}
-          services={services}
-          readOnly={staffView}
-          showFinance={ownerFinance}
-        />
+        <div id="desk-load-board">
+          <InteractiveDesk
+            key={dayIsoParam}
+            dayIso={dayStart.toISOString()}
+            posts={posts.map((p) => ({
+              id: p.id,
+              name: p.name,
+              workStartHour: p.workStartHour,
+              workEndHour: p.workEndHour,
+            }))}
+            initialBlocks={blocks.map(toDeskBlock)}
+            customers={customers}
+            services={services}
+            readOnly={staffView}
+            showFinance={ownerFinance}
+          />
+        </div>
       )}
     </div>
   );
