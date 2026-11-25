@@ -71,12 +71,7 @@ export default async function ClientBookPage() {
     "NEW_FROM_CLIENT",
     "CONFIRMED",
   ]);
-  const woBusyStatuses = new Set([
-    "NEW",
-    "NEW_FROM_CLIENT",
-    "CONFIRMED",
-    "IN_PROGRESS",
-  ]);
+  const woBusyStatuses = new Set(["IN_PROGRESS"]);
 
   const busy = [
     ...bookings

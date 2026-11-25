@@ -12,17 +12,10 @@ const hourLabel = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
 
 function blockTone(kind: BoardBlock["kind"], status: string) {
   if (kind === "work_order") {
-    if (status === "NEW")
-      return "bg-[#5b7c99] text-white border-transparent";
-    if (status === "NEW_FROM_CLIENT")
-      return "bg-[#9a6b16] text-white border-transparent";
-    if (status === "IN_PROGRESS")
-      return "bg-[var(--accent)] text-white border-transparent";
     if (status === "CLOSED")
       return "bg-[var(--teal)]/90 text-white border-transparent";
-    if (status === "CONFIRMED")
-      return "bg-[#1a3a4a] text-white border-transparent";
-    return "bg-[#243d4a] text-white border-transparent";
+    // IN_PROGRESS (и любой неизвестный — как «в работе»)
+    return "bg-[var(--accent)] text-white border-transparent";
   }
   if (status === "NEW_FROM_CLIENT")
     return "bg-[#9a6b16] text-white border-transparent";
@@ -155,9 +148,6 @@ export function LoadBoardGrid({
 
 export function LoadBoardLegend() {
   const workOrderStatuses = [
-    { status: "NEW", swatch: "bg-[#5b7c99]" },
-    { status: "NEW_FROM_CLIENT", swatch: "bg-[#9a6b16]" },
-    { status: "CONFIRMED", swatch: "bg-[#1a3a4a]" },
     { status: "IN_PROGRESS", swatch: "bg-[var(--accent)]" },
     { status: "CLOSED", swatch: "bg-[var(--teal)]" },
   ] as const;

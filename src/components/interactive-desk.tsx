@@ -106,29 +106,20 @@ type CreateDraft = {
 
 const hourLabel = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
 
-/** Цвета плашек заказ-наряда по статусу (легенда под графиком). */
+/** Цвета плашек ЗН — отдельно от записи (cream/gold/white). */
 const WORK_ORDER_STATUS_SWATCH: Record<string, string> = {
-  NEW: "bg-[#5b7c99]",
-  NEW_FROM_CLIENT: "bg-[#9a6b16]",
-  CONFIRMED: "bg-[#1a3a4a]",
   IN_PROGRESS: "bg-[var(--accent)]",
   CLOSED: "bg-[var(--teal)]",
 };
 
 function workOrderBlockTone(status: string) {
   switch (status) {
-    case "NEW":
-      return "bg-[#5b7c99] text-white border-transparent";
-    case "NEW_FROM_CLIENT":
-      return "bg-[#9a6b16] text-white border-transparent";
-    case "CONFIRMED":
-      return "bg-[#1a3a4a] text-white border-transparent";
     case "IN_PROGRESS":
       return "bg-[var(--accent)] text-white border-transparent";
     case "CLOSED":
       return "bg-[var(--teal)]/90 text-white border-transparent";
     default:
-      return "bg-[#243d4a] text-white border-transparent";
+      return "bg-[var(--accent)] text-white border-transparent";
   }
 }
 
@@ -669,13 +660,7 @@ export function InteractiveDesk({
   );
 }
 
-const WORK_ORDER_LEGEND_STATUSES = [
-  "NEW",
-  "NEW_FROM_CLIENT",
-  "CONFIRMED",
-  "IN_PROGRESS",
-  "CLOSED",
-] as const;
+const WORK_ORDER_LEGEND_STATUSES = ["IN_PROGRESS", "CLOSED"] as const;
 
 function LoadBoardLegendStatic({ readOnly }: { readOnly?: boolean }) {
   return (

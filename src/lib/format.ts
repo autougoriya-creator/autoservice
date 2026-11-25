@@ -61,9 +61,6 @@ export const roleLabel: Record<string, string> = {
 };
 
 export const workOrderStatusLabel: Record<string, string> = {
-  NEW: "Новый",
-  NEW_FROM_CLIENT: "Новый от клиента",
-  CONFIRMED: "Подтверждён",
   IN_PROGRESS: "В работе",
   CLOSED: "Закрыт",
 };
@@ -89,11 +86,6 @@ export function workOrderStatusTone(
       return "ok";
     case "IN_PROGRESS":
       return "accent";
-    case "CONFIRMED":
-      return "warn";
-    case "NEW":
-    case "NEW_FROM_CLIENT":
-      return "warn";
     default:
       return "neutral";
   }

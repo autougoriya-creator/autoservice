@@ -725,20 +725,20 @@ async function main() {
   await createWorkOrder({
     customerId: customerMaria.id,
     vehicleId: polo.id,
-    status: WorkOrderStatus.CONFIRMED,
+    status: WorkOrderStatus.IN_PROGRESS,
     postId: posts[1].id,
     scheduledAt: at(17, 0),
-    notes: "Подтверждён — вечерний экспресс. При заезде: «ТС заехало → В работе»",
+    notes: "В работе — вечерний экспресс (создан как ЗН, не запись)",
     lines: [{ serviceId: services[0].id }],
   });
 
   await createWorkOrder({
     customerId: customerIvan.id,
     vehicleId: vesta.id,
-    status: WorkOrderStatus.NEW,
+    status: WorkOrderStatus.IN_PROGRESS,
     postId: posts[0].id,
     scheduledAt: at(18, 30),
-    notes: "Новый ЗН — общий вид для админа и мойщика",
+    notes: "В работе — общий вид для админа и мойщика",
     lines: [{ serviceId: services[1].id }],
   });
 

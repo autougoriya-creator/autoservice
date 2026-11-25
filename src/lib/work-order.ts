@@ -23,11 +23,8 @@ export function formatDuration(minutes: number) {
   return m === 0 ? `${h} ч` : `${h} ч ${m} мин`;
 }
 
-/** Порядок статусов: NEW / NEW_FROM_CLIENT → CONFIRMED → IN_PROGRESS → CLOSED */
+/** Статусы ЗН: в работе → закрыт (без пересечения со статусами записи) */
 export const WORK_ORDER_STATUSES: WorkOrderStatus[] = [
-  "NEW",
-  "NEW_FROM_CLIENT",
-  "CONFIRMED",
   "IN_PROGRESS",
   "CLOSED",
 ];
@@ -37,12 +34,6 @@ export function nextWorkOrderStatuses(
   from: WorkOrderStatus,
 ): WorkOrderStatus[] {
   switch (from) {
-    case "NEW":
-      return ["CONFIRMED", "IN_PROGRESS"];
-    case "NEW_FROM_CLIENT":
-      return ["CONFIRMED", "IN_PROGRESS"];
-    case "CONFIRMED":
-      return ["IN_PROGRESS"];
     case "IN_PROGRESS":
       return ["CLOSED"];
     case "CLOSED":
@@ -58,15 +49,6 @@ export function canTransitionWorkOrderStatus(
 ): boolean {
   if (from === to) return true;
   return nextWorkOrderStatuses(from).includes(to);
-}
-
-/** При заезде ТС: из нового / от клиента / подтверждённого → в работе */
-export function canMarkWorkOrderInProgress(status: WorkOrderStatus): boolean {
-  return (
-    status === "NEW" ||
-    status === "NEW_FROM_CLIENT" ||
-    status === "CONFIRMED"
-  );
 }
 
 /** Статусы для селекта: текущий + допустимые переходы */

@@ -36,7 +36,7 @@ export default async function OwnerDashboardPage() {
       where: {
         organizationId: orgId,
         status: {
-          in: ["NEW", "NEW_FROM_CLIENT", "CONFIRMED", "IN_PROGRESS"],
+          in: ["IN_PROGRESS"],
         },
       },
     }),
