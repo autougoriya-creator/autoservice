@@ -35,17 +35,46 @@ import {
   formatRub,
   workOrderStatusLabel,
 } from "@/lib/format";
+import { phoneDigits } from "@/lib/phone";
 import { selectableWorkOrderStatuses } from "@/lib/work-order";
 import type { WorkOrderStatus } from "@prisma/client";
 
 type Post = { id: string; name: string };
-type CustomerOpt = { id: string; name: string; phone: string };
+type VehicleOpt = {
+  id: string;
+  make: string;
+  model: string;
+  plate: string;
+};
+type CustomerOpt = {
+  id: string;
+  name: string;
+  phone: string;
+  vehicles: VehicleOpt[];
+};
 type ServiceOpt = {
   id: string;
   name: string;
   durationMin: number;
   priceRub: number;
 };
+
+function vehicleLabel(v: VehicleOpt) {
+  return `${v.make} ${v.model} · ${v.plate}`;
+}
+
+/** Поиск клиента по цифрам телефона (от 3 знаков). */
+function customersByPhoneQuery(
+  customers: CustomerOpt[],
+  query: string,
+): CustomerOpt[] {
+  const q = phoneDigits(query);
+  if (q.length < 3) return [];
+  return customers.filter((c) => {
+    const digits = phoneDigits(c.phone);
+    return digits.includes(q) || q.includes(digits);
+  });
+}
 
 type DragState = {
   id: string;
@@ -63,16 +92,34 @@ type CreateDraft = {
 
 const hourLabel = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
 
-function blockTone(kind: DeskBlock["kind"], status: string) {
-  if (kind === "work_order") {
-    if (status === "IN_PROGRESS")
-      return "bg-[var(--accent)] text-white border-transparent";
-    if (status === "CLOSED")
-      return "bg-[var(--teal)]/90 text-white border-transparent";
-    if (status === "CONFIRMED")
+/** Цвета плашек заказ-наряда по статусу (легенда под графиком). */
+const WORK_ORDER_STATUS_SWATCH: Record<string, string> = {
+  NEW: "bg-[#5b7c99]",
+  NEW_FROM_CLIENT: "bg-[#9a6b16]",
+  CONFIRMED: "bg-[#1a3a4a]",
+  IN_PROGRESS: "bg-[var(--accent)]",
+  CLOSED: "bg-[var(--teal)]",
+};
+
+function workOrderBlockTone(status: string) {
+  switch (status) {
+    case "NEW":
+      return "bg-[#5b7c99] text-white border-transparent";
+    case "NEW_FROM_CLIENT":
+      return "bg-[#9a6b16] text-white border-transparent";
+    case "CONFIRMED":
       return "bg-[#1a3a4a] text-white border-transparent";
-    return "bg-[#243d4a] text-white border-transparent";
+    case "IN_PROGRESS":
+      return "bg-[var(--accent)] text-white border-transparent";
+    case "CLOSED":
+      return "bg-[var(--teal)]/90 text-white border-transparent";
+    default:
+      return "bg-[#243d4a] text-white border-transparent";
   }
+}
+
+function blockTone(kind: DeskBlock["kind"], status: string) {
+  if (kind === "work_order") return workOrderBlockTone(status);
   if (status === "IN_PROGRESS")
     return "bg-[var(--accent-deep)] text-white border-transparent";
   if (status === "DONE")
@@ -338,8 +385,8 @@ export function InteractiveDesk({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-[var(--ink-soft)]">
           {readOnly
-            ? "Только просмотр закреплённых постов · тап по карточке — детали"
-            : "Перетащите карточку на другой пост/время · край справа — длительность · тап по пустому месту — новая запись"}
+            ? "Только просмотр закреплённых постов · тап по карточке — окно заказа"
+            : "Тап по свободному слоту — новая запись · тап по карточке — окно заказа · перетаскивание и край справа — как раньше"}
         </p>
         {readOnly ? null : (
           <button
@@ -552,22 +599,52 @@ export function InteractiveDesk({
   );
 }
 
+const WORK_ORDER_LEGEND_STATUSES = [
+  "NEW",
+  "NEW_FROM_CLIENT",
+  "CONFIRMED",
+  "IN_PROGRESS",
+  "CLOSED",
+] as const;
+
 function LoadBoardLegendStatic({ readOnly }: { readOnly?: boolean }) {
   return (
-    <div className="flex flex-wrap gap-3 text-xs text-[var(--ink-soft)]">
-      <span className="inline-flex items-center gap-2">
-        <span className="h-3 w-3 rounded-sm border border-[var(--ink)]/15 bg-white" />
-        Запись
-      </span>
-      <span className="inline-flex items-center gap-2">
-        <span className="h-3 w-3 rounded-sm bg-[#1a3a4a]" />
-        Заказ-наряд
-      </span>
-      <span className="inline-flex items-center gap-2">
-        {readOnly
-          ? "Режим сотрудника · только просмотр"
-          : `Перетаскивание · ${BOARD_SNAP_MIN} мин`}
-      </span>
+    <div className="space-y-3 rounded-xl border border-[var(--line)] bg-white/70 px-4 py-3">
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-soft)]">
+          Заказ-наряды по статусам
+        </p>
+        <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-[var(--ink)]">
+          {WORK_ORDER_LEGEND_STATUSES.map((status) => (
+            <span key={status} className="inline-flex items-center gap-2">
+              <span
+                className={`h-3.5 w-3.5 shrink-0 rounded-sm ${WORK_ORDER_STATUS_SWATCH[status]}`}
+                aria-hidden
+              />
+              {workOrderStatusLabel[status]}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[var(--line)] pt-3 text-xs text-[var(--ink-soft)]">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3.5 w-3.5 rounded-sm border border-[var(--ink)]/15 bg-white" />
+          Запись (подтверждена)
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3.5 w-3.5 rounded-sm bg-[var(--accent-deep)]" />
+          Запись в работе
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3.5 w-3.5 rounded-sm bg-[#f4e8c8]" />
+          Запись ожидает
+        </span>
+        <span>
+          {readOnly
+            ? "Режим сотрудника · только просмотр"
+            : `Перетаскивание · ${BOARD_SNAP_MIN} мин`}
+        </span>
+      </div>
     </div>
   );
 }
@@ -691,6 +768,14 @@ function DetailPanel({
     setAmountTouched(false);
   }, [block]);
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   const selectedIds = useMemo(() => {
     const set = new Set<string>();
     for (const l of selected) {
@@ -791,208 +876,229 @@ function DetailPanel({
     }
   }
 
+  const heading =
+    block.kind === "work_order" && block.workOrderNumber
+      ? `ЗН-${String(block.workOrderNumber).padStart(4, "0")}`
+      : block.title;
+
   return (
-    <aside className="rounded-xl border border-[var(--line)] bg-white/95 p-5 shadow-[var(--shadow)]">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">
-            {block.kind === "booking" ? "Запись" : "Заказ-наряд"}
-          </p>
-          <h2 className="brand-mark mt-1 text-2xl text-[var(--ink)]">
-            {block.kind === "work_order" && block.workOrderNumber
-              ? `ЗН-${String(block.workOrderNumber).padStart(4, "0")}`
-              : block.title}
-          </h2>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="min-h-11 cursor-pointer rounded-md border border-[var(--line)] px-4 text-sm font-semibold"
-        >
-          Закрыть
-        </button>
-      </div>
-
-      <dl className="mb-5 grid gap-3 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-xs text-[var(--ink-soft)]">Клиент</dt>
-          <dd className="font-medium">{block.clientName}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-[var(--ink-soft)]">Авто</dt>
-          <dd className="font-medium">{block.vehicleInfo || "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-[var(--ink-soft)]">Пост</dt>
-          <dd className="font-medium">
-            {posts.find((p) => p.id === block.postId)?.name ?? "—"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs text-[var(--ink-soft)]">Время</dt>
-          <dd className="font-medium">
-            {formatClock(block.startsAt)} · {block.durationMin} мин
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs text-[var(--ink-soft)]">Статус</dt>
-          <dd className="font-medium">
-            {statusText(block.kind, block.status)}
-          </dd>
-        </div>
-        {showFinance && typeof block.plannedAmountRub === "number" ? (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--ink)]/45 p-3 sm:items-center sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="order-detail-title"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[var(--line)] bg-white p-5 shadow-[0_24px_60px_rgba(20,32,42,0.28)] sm:p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <dt className="text-xs text-[var(--ink-soft)]">План, ₽</dt>
-            <dd className="font-medium">{formatRub(block.plannedAmountRub)}</dd>
-          </div>
-        ) : null}
-        <div className="sm:col-span-2">
-          <dt className="text-xs text-[var(--ink-soft)]">Услуги</dt>
-          <dd className="font-medium">{block.services.join(", ")}</dd>
-        </div>
-      </dl>
-
-      {readOnly ? (
-        <div className="mt-2 flex flex-wrap gap-3">
-          {block.kind === "work_order" ? (
-            <a
-              href={`/owner/work-orders/${block.id}`}
-              className="inline-flex min-h-11 items-center rounded-md border border-[var(--line)] px-5 text-sm font-semibold"
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">
+              {block.kind === "booking" ? "Запись" : "Заказ-наряд"}
+            </p>
+            <h2
+              id="order-detail-title"
+              className="brand-mark mt-1 text-2xl text-[var(--ink)]"
             >
-              Открыть карточку ЗН
-            </a>
+              {heading}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-11 shrink-0 cursor-pointer rounded-md border border-[var(--line)] px-4 text-sm font-semibold"
+          >
+            Закрыть
+          </button>
+        </div>
+
+        <dl className="mb-5 grid gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-xs text-[var(--ink-soft)]">Клиент</dt>
+            <dd className="font-medium">{block.clientName}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-[var(--ink-soft)]">Авто</dt>
+            <dd className="font-medium">{block.vehicleInfo || "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-[var(--ink-soft)]">Пост</dt>
+            <dd className="font-medium">
+              {posts.find((p) => p.id === block.postId)?.name ?? "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-[var(--ink-soft)]">Время</dt>
+            <dd className="font-medium">
+              {formatClock(block.startsAt)} · {block.durationMin} мин
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-[var(--ink-soft)]">Статус</dt>
+            <dd className="font-medium">
+              {statusText(block.kind, block.status)}
+            </dd>
+          </div>
+          {showFinance && typeof block.plannedAmountRub === "number" ? (
+            <div>
+              <dt className="text-xs text-[var(--ink-soft)]">План, ₽</dt>
+              <dd className="font-medium">
+                {formatRub(block.plannedAmountRub)}
+              </dd>
+            </div>
           ) : null}
-          <p className="self-center text-xs text-[var(--ink-soft)]">
-            Редактирование недоступно в режиме сотрудника
-          </p>
-        </div>
-      ) : (
-        <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block text-sm">
-              <span className="mb-1.5 block font-semibold">Пост</span>
-              <select
-                value={postId}
-                onChange={(e) => setPostId(e.target.value)}
-                className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-              >
-                {posts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1.5 block font-semibold">Начало</span>
-              <input
-                type="datetime-local"
-                value={startsLocal}
-                onChange={(e) => setStartsLocal(e.target.value)}
-                className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-              />
-            </label>
-            {block.kind === "booking" ? (
-              <>
-                <div className="sm:col-span-2">
-                  <p className="mb-1.5 text-sm font-semibold">Услуги</p>
-                  <ServicePicker
-                    catalog={catalog}
-                    selectedIds={selectedIds}
-                    onToggle={toggleService}
-                  />
-                </div>
-                <label className="block text-sm">
-                  <span className="mb-1.5 block font-semibold">
-                    Длительность, мин
-                  </span>
-                  <input
-                    type="number"
-                    min={15}
-                    step={15}
-                    value={durationMin}
-                    onChange={(e) =>
-                      setDurationMin(Number(e.target.value) || 15)
-                    }
-                    className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-                  />
-                </label>
-                <label className="block text-sm">
-                  <span className="mb-1.5 block font-semibold">
-                    План суммы, ₽
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={50}
-                    value={plannedAmount}
-                    onChange={(e) => {
-                      setAmountTouched(true);
-                      setPlannedAmount(Number(e.target.value) || 0);
-                    }}
-                    className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-                  />
-                  <span className="mt-1 block text-xs text-[var(--ink-soft)]">
-                    По каталогу: {formatRub(catalogTotal(selected))}
-                  </span>
-                </label>
-                <label className="block text-sm sm:col-span-2">
-                  <span className="mb-1.5 block font-semibold">
-                    Авто / госномер
-                  </span>
-                  <input
-                    value={vehicleInfo}
-                    onChange={(e) => setVehicleInfo(e.target.value)}
-                    className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-                  />
-                </label>
-              </>
-            ) : null}
-            <label className="block text-sm">
-              <span className="mb-1.5 block font-semibold">Статус</span>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-              >
-                {block.kind === "booking"
-                  ? Object.entries(bookingStatusLabel).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))
-                  : selectableWorkOrderStatuses(
-                      block.status as WorkOrderStatus,
-                    ).map((value) => (
-                      <option key={value} value={value}>
-                        {workOrderStatusLabel[value]}
-                      </option>
-                    ))}
-              </select>
-            </label>
+          <div className="sm:col-span-2">
+            <dt className="text-xs text-[var(--ink-soft)]">Услуги</dt>
+            <dd className="font-medium">{block.services.join(", ")}</dd>
           </div>
+        </dl>
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => void save()}
-              className="min-h-11 cursor-pointer rounded-md bg-[var(--ink)] px-5 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {pending ? "Сохранение…" : "Сохранить"}
-            </button>
+        {readOnly ? (
+          <div className="mt-2 flex flex-wrap gap-3">
             {block.kind === "work_order" ? (
               <a
                 href={`/owner/work-orders/${block.id}`}
                 className="inline-flex min-h-11 items-center rounded-md border border-[var(--line)] px-5 text-sm font-semibold"
               >
-                Открыть карточку ЗН
+                Полная карточка ЗН
               </a>
             ) : null}
+            <p className="self-center text-xs text-[var(--ink-soft)]">
+              Редактирование недоступно в режиме сотрудника
+            </p>
           </div>
-        </>
-      )}
-    </aside>
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm">
+                <span className="mb-1.5 block font-semibold">Пост</span>
+                <select
+                  value={postId}
+                  onChange={(e) => setPostId(e.target.value)}
+                  className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                >
+                  {posts.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1.5 block font-semibold">Начало</span>
+                <input
+                  type="datetime-local"
+                  value={startsLocal}
+                  onChange={(e) => setStartsLocal(e.target.value)}
+                  className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                />
+              </label>
+              {block.kind === "booking" ? (
+                <>
+                  <div className="sm:col-span-2">
+                    <p className="mb-1.5 text-sm font-semibold">Услуги</p>
+                    <ServicePicker
+                      catalog={catalog}
+                      selectedIds={selectedIds}
+                      onToggle={toggleService}
+                    />
+                  </div>
+                  <label className="block text-sm">
+                    <span className="mb-1.5 block font-semibold">
+                      Длительность, мин
+                    </span>
+                    <input
+                      type="number"
+                      min={15}
+                      step={15}
+                      value={durationMin}
+                      onChange={(e) =>
+                        setDurationMin(Number(e.target.value) || 15)
+                      }
+                      className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-1.5 block font-semibold">
+                      План суммы, ₽
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={50}
+                      value={plannedAmount}
+                      onChange={(e) => {
+                        setAmountTouched(true);
+                        setPlannedAmount(Number(e.target.value) || 0);
+                      }}
+                      className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                    />
+                    <span className="mt-1 block text-xs text-[var(--ink-soft)]">
+                      По каталогу: {formatRub(catalogTotal(selected))}
+                    </span>
+                  </label>
+                  <label className="block text-sm sm:col-span-2">
+                    <span className="mb-1.5 block font-semibold">
+                      Авто / госномер
+                    </span>
+                    <input
+                      value={vehicleInfo}
+                      onChange={(e) => setVehicleInfo(e.target.value)}
+                      className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                    />
+                  </label>
+                </>
+              ) : null}
+              <label className="block text-sm">
+                <span className="mb-1.5 block font-semibold">Статус</span>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                >
+                  {block.kind === "booking"
+                    ? Object.entries(bookingStatusLabel).map(
+                        ([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ),
+                      )
+                    : selectableWorkOrderStatuses(
+                        block.status as WorkOrderStatus,
+                      ).map((value) => (
+                        <option key={value} value={value}>
+                          {workOrderStatusLabel[value]}
+                        </option>
+                      ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => void save()}
+                className="min-h-11 cursor-pointer rounded-md bg-[var(--ink)] px-5 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {pending ? "Сохранение…" : "Сохранить"}
+              </button>
+              {block.kind === "work_order" ? (
+                <a
+                  href={`/owner/work-orders/${block.id}`}
+                  className="inline-flex min-h-11 items-center rounded-md border border-[var(--line)] px-5 text-sm font-semibold"
+                >
+                  Полная карточка ЗН
+                </a>
+              ) : null}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1042,14 +1148,13 @@ function CreatePanel({
     defaultService?.priceRub ?? 0,
   );
   const [amountTouched, setAmountTouched] = useState(false);
-  const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
-  const [mode, setMode] = useState<"existing" | "new">(
-    customers.length ? "existing" : "new",
-  );
+  const [phoneQuery, setPhoneQuery] = useState("");
+  const [pickedCustomerId, setPickedCustomerId] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
-  const [newPhone, setNewPhone] = useState("");
-  const [vehicleInfo, setVehicleInfo] = useState("");
+  const [vehicleId, setVehicleId] = useState("");
+  const [vehicleInfoManual, setVehicleInfoManual] = useState("");
   const [pending, setPending] = useState(false);
+  const phoneInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setPostId(draft.postId || posts[0]?.id || "");
@@ -1058,6 +1163,64 @@ function CreatePanel({
     );
   }, [draft, day, posts]);
 
+  useEffect(() => {
+    phoneInputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const phoneMatches = useMemo(
+    () => customersByPhoneQuery(customers, phoneQuery),
+    [customers, phoneQuery],
+  );
+
+  const matchedCustomer = useMemo(() => {
+    if (pickedCustomerId) {
+      return customers.find((c) => c.id === pickedCustomerId) ?? null;
+    }
+    if (phoneMatches.length === 1) return phoneMatches[0];
+    return null;
+  }, [customers, pickedCustomerId, phoneMatches]);
+
+  const isNewClient =
+    phoneDigits(phoneQuery).length >= 3 &&
+    phoneMatches.length === 0 &&
+    !matchedCustomer;
+
+  const customerVehicles = matchedCustomer?.vehicles ?? [];
+  const matchedCustomerId = matchedCustomer?.id ?? null;
+
+  useEffect(() => {
+    if (!matchedCustomerId || !matchedCustomer) {
+      setVehicleId("");
+      return;
+    }
+    const vehicles = matchedCustomer.vehicles;
+    if (vehicles.length === 1) {
+      setVehicleId(vehicles[0].id);
+      setVehicleInfoManual("");
+    } else if (vehicles.length === 0) {
+      setVehicleId("");
+    } else {
+      setVehicleId((prev) =>
+        vehicles.some((v) => v.id === prev) ? prev : "",
+      );
+    }
+  }, [matchedCustomerId, matchedCustomer]);
+
+  const selectedVehicle =
+    customerVehicles.find((v) => v.id === vehicleId) ?? null;
+
+  const resolvedVehicleInfo = selectedVehicle
+    ? vehicleLabel(selectedVehicle)
+    : vehicleInfoManual.trim();
+
   const selectedIds = useMemo(() => {
     const set = new Set<string>();
     for (const l of selected) {
@@ -1065,6 +1228,18 @@ function CreatePanel({
     }
     return set;
   }, [selected]);
+
+  function onPhoneChange(value: string) {
+    setPhoneQuery(value);
+    setPickedCustomerId(null);
+    setNewName("");
+  }
+
+  function pickCustomer(c: CustomerOpt) {
+    setPickedCustomerId(c.id);
+    setPhoneQuery(c.phone);
+    setNewName("");
+  }
 
   function toggleService(service: ServiceOpt) {
     setSelected((prev) => {
@@ -1100,16 +1275,32 @@ function CreatePanel({
       setPending(false);
       return;
     }
+    if (!matchedCustomer && !isNewClient) {
+      onError("Введите телефон клиента — найдём в базе или создадим нового");
+      setPending(false);
+      return;
+    }
+    if (isNewClient && !newName.trim()) {
+      onError("Укажите имя нового клиента");
+      setPending(false);
+      return;
+    }
+    if (matchedCustomer && customerVehicles.length > 1 && !vehicleId) {
+      onError("Выберите автомобиль клиента");
+      setPending(false);
+      return;
+    }
+
     const result = await createDeskBooking({
       postId,
       startsAtIso: startsAt.toISOString(),
       durationMin,
       plannedAmountRub: plannedAmount,
       lines: selected,
-      customerId: mode === "existing" ? customerId : undefined,
-      newCustomerName: mode === "new" ? newName : undefined,
-      newCustomerPhone: mode === "new" ? newPhone : undefined,
-      vehicleInfo,
+      customerId: matchedCustomer?.id,
+      newCustomerName: isNewClient ? newName : undefined,
+      newCustomerPhone: isNewClient ? phoneQuery : undefined,
+      vehicleInfo: resolvedVehicleInfo,
     });
     setPending(false);
     if (!result.ok || !result.id) {
@@ -1117,191 +1308,261 @@ function CreatePanel({
       return;
     }
     const customerName =
-      mode === "existing"
-        ? (customers.find((c) => c.id === customerId)?.name ?? "Клиент")
-        : newName.trim() || "Клиент";
+      matchedCustomer?.name ?? (newName.trim() || "Клиент");
     const names = result.services ?? selected.map((l) => l.name);
     onCreated({
       id: result.id,
       kind: "booking",
       postId,
       title: names[0] ?? "Услуга",
-      subtitle: vehicleInfo || customerName,
+      subtitle: resolvedVehicleInfo || customerName,
       startsAt: startsAt.toISOString(),
       durationMin: result.durationMin ?? snapMinutes(durationMin),
       status: "CONFIRMED",
       clientName: customerName,
-      vehicleInfo,
+      vehicleInfo: resolvedVehicleInfo,
       services: names,
       plannedAmountRub: result.plannedAmountRub ?? plannedAmount,
       lineItems: selected,
     });
   }
 
+  const postName = posts.find((p) => p.id === postId)?.name ?? "пост";
+
   return (
-    <aside className="rounded-xl border border-[var(--line)] bg-white/95 p-5 shadow-[var(--shadow)]">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">
-            Новая запись
-          </p>
-          <h2 className="brand-mark mt-1 text-2xl">Создать на посту</h2>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="min-h-11 cursor-pointer rounded-md border border-[var(--line)] px-4 text-sm font-semibold"
-        >
-          Отмена
-        </button>
-      </div>
-
-      <div className="mb-4 flex gap-2">
-        <button
-          type="button"
-          onClick={() => setMode("existing")}
-          className={`min-h-11 flex-1 rounded-md px-3 text-sm font-semibold ${
-            mode === "existing"
-              ? "bg-[var(--ink)] text-white"
-              : "border border-[var(--line)]"
-          }`}
-        >
-          Из базы
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("new")}
-          className={`min-h-11 flex-1 rounded-md px-3 text-sm font-semibold ${
-            mode === "new"
-              ? "bg-[var(--ink)] text-white"
-              : "border border-[var(--line)]"
-          }`}
-        >
-          Новый клиент
-        </button>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        {mode === "existing" ? (
-          <label className="block text-sm sm:col-span-2">
-            <span className="mb-1.5 block font-semibold">Клиент</span>
-            <select
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-              className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--ink)]/45 p-3 sm:items-center sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-booking-title"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[var(--line)] bg-white p-5 shadow-[0_24px_60px_rgba(20,32,42,0.28)] sm:p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">
+              Новая запись
+            </p>
+            <h2
+              id="create-booking-title"
+              className="brand-mark mt-1 text-2xl text-[var(--ink)]"
             >
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                  {c.phone ? ` · ${c.phone}` : ""}
-                </option>
-              ))}
-            </select>
+              {postName} · {startsLocal.slice(11, 16) || "время"}
+            </h2>
+            <p className="mt-1 text-sm text-[var(--ink-soft)]">
+              Поиск клиента по телефону. Имя и авто подтянутся сами.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-11 shrink-0 cursor-pointer rounded-md border border-[var(--line)] px-4 text-sm font-semibold"
+          >
+            Отмена
+          </button>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block text-sm sm:col-span-2">
+            <span className="mb-1.5 block font-semibold">Телефон клиента</span>
+            <input
+              ref={phoneInputRef}
+              value={phoneQuery}
+              onChange={(e) => onPhoneChange(e.target.value)}
+              className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+              placeholder="+7 9…"
+              inputMode="tel"
+              autoComplete="tel"
+            />
+            {phoneDigits(phoneQuery).length > 0 &&
+            phoneDigits(phoneQuery).length < 3 ? (
+              <span className="mt-1 block text-xs text-[var(--ink-soft)]">
+                Введите ещё цифры для поиска
+              </span>
+            ) : null}
           </label>
-        ) : (
-          <>
-            <label className="block text-sm">
-              <span className="mb-1.5 block font-semibold">Имя</span>
+
+          {matchedCustomer ? (
+            <div className="rounded-md border border-[var(--teal)]/30 bg-[var(--teal-soft)]/40 px-3 py-3 sm:col-span-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--teal)]">
+                Клиент найден
+              </p>
+              <p className="mt-1 text-base font-semibold text-[var(--ink)]">
+                {matchedCustomer.name}
+              </p>
+              <p className="text-sm text-[var(--ink-soft)]">
+                {matchedCustomer.phone}
+              </p>
+            </div>
+          ) : null}
+
+          {!matchedCustomer && phoneMatches.length > 1 ? (
+            <div className="sm:col-span-2">
+              <p className="mb-2 text-sm font-semibold">Несколько совпадений</p>
+              <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-[var(--line)] bg-[var(--paper)]/50 p-2">
+                {phoneMatches.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => pickCustomer(c)}
+                      className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 rounded-md px-3 text-left text-sm hover:bg-white"
+                    >
+                      <span className="font-medium text-[var(--ink)]">
+                        {c.name}
+                      </span>
+                      <span className="text-[var(--ink-soft)]">{c.phone}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {isNewClient ? (
+            <label className="block text-sm sm:col-span-2">
+              <span className="mb-1.5 block font-semibold">
+                Имя нового клиента
+              </span>
               <input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
                 placeholder="Иван Иванов"
               />
+              <span className="mt-1 block text-xs text-[var(--ink-soft)]">
+                Клиента с таким телефоном ещё нет — создадим вместе с записью
+              </span>
             </label>
-            <label className="block text-sm">
-              <span className="mb-1.5 block font-semibold">Телефон</span>
-              <input
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
+          ) : null}
+
+          {matchedCustomer && customerVehicles.length > 1 ? (
+            <label className="block text-sm sm:col-span-2">
+              <span className="mb-1.5 block font-semibold">Автомобиль</span>
+              <select
+                value={vehicleId}
+                onChange={(e) => setVehicleId(e.target.value)}
                 className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-                placeholder="+7 …"
+              >
+                <option value="">Выберите авто</option>
+                {customerVehicles.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {vehicleLabel(v)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          {matchedCustomer && customerVehicles.length === 1 ? (
+            <div className="sm:col-span-2 rounded-md border border-[var(--line)] bg-[var(--paper)]/50 px-3 py-3 text-sm">
+              <p className="text-xs text-[var(--ink-soft)]">Автомобиль</p>
+              <p className="font-medium text-[var(--ink)]">
+                {vehicleLabel(customerVehicles[0])}
+              </p>
+            </div>
+          ) : null}
+
+          {(!matchedCustomer || customerVehicles.length === 0) &&
+          (isNewClient || matchedCustomer) ? (
+            <label className="block text-sm sm:col-span-2">
+              <span className="mb-1.5 block font-semibold">
+                Авто / госномер
+                {matchedCustomer ? " (нет в базе — укажите вручную)" : ""}
+              </span>
+              <input
+                value={vehicleInfoManual}
+                onChange={(e) => setVehicleInfoManual(e.target.value)}
+                className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+                placeholder="Toyota Camry · А123ВС777"
               />
             </label>
-          </>
-        )}
+          ) : null}
 
-        <label className="block text-sm">
-          <span className="mb-1.5 block font-semibold">Пост</span>
-          <select
-            value={postId}
-            onChange={(e) => setPostId(e.target.value)}
-            className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-          >
-            {posts.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1.5 block font-semibold">Начало</span>
-          <input
-            type="datetime-local"
-            value={startsLocal}
-            onChange={(e) => setStartsLocal(e.target.value)}
-            className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-          />
-        </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block font-semibold">Пост</span>
+            <select
+              value={postId}
+              onChange={(e) => setPostId(e.target.value)}
+              className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+            >
+              {posts.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block font-semibold">Начало</span>
+            <input
+              type="datetime-local"
+              value={startsLocal}
+              onChange={(e) => setStartsLocal(e.target.value)}
+              className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+            />
+          </label>
 
-        <div className="sm:col-span-2">
-          <p className="mb-1.5 text-sm font-semibold">Услуги</p>
-          <ServicePicker
-            catalog={services}
-            selectedIds={selectedIds}
-            onToggle={toggleService}
-          />
+          <div className="sm:col-span-2">
+            <p className="mb-1.5 text-sm font-semibold">Услуги</p>
+            <ServicePicker
+              catalog={services}
+              selectedIds={selectedIds}
+              onToggle={toggleService}
+            />
+          </div>
+
+          <label className="block text-sm">
+            <span className="mb-1.5 block font-semibold">Длительность, мин</span>
+            <input
+              type="number"
+              min={15}
+              step={15}
+              value={durationMin}
+              onChange={(e) => setDurationMin(Number(e.target.value) || 15)}
+              className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block font-semibold">План суммы, ₽</span>
+            <input
+              type="number"
+              min={0}
+              step={50}
+              value={plannedAmount}
+              onChange={(e) => {
+                setAmountTouched(true);
+                setPlannedAmount(Number(e.target.value) || 0);
+              }}
+              className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
+            />
+            <span className="mt-1 block text-xs text-[var(--ink-soft)]">
+              По каталогу: {formatRub(catalogTotal(selected))}
+              {showFinance ? "" : " · сумма сохраняется в записи"}
+            </span>
+          </label>
         </div>
 
-        <label className="block text-sm">
-          <span className="mb-1.5 block font-semibold">Длительность, мин</span>
-          <input
-            type="number"
-            min={15}
-            step={15}
-            value={durationMin}
-            onChange={(e) => setDurationMin(Number(e.target.value) || 15)}
-            className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-          />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1.5 block font-semibold">План суммы, ₽</span>
-          <input
-            type="number"
-            min={0}
-            step={50}
-            value={plannedAmount}
-            onChange={(e) => {
-              setAmountTouched(true);
-              setPlannedAmount(Number(e.target.value) || 0);
-            }}
-            className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-          />
-          <span className="mt-1 block text-xs text-[var(--ink-soft)]">
-            По каталогу: {formatRub(catalogTotal(selected))}
-            {showFinance ? "" : " · сумма сохраняется в записи"}
-          </span>
-        </label>
-        <label className="block text-sm sm:col-span-2">
-          <span className="mb-1.5 block font-semibold">Авто / госномер</span>
-          <input
-            value={vehicleInfo}
-            onChange={(e) => setVehicleInfo(e.target.value)}
-            className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
-            placeholder="Toyota Camry · А123ВС777"
-          />
-        </label>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void submit()}
+            className="min-h-11 cursor-pointer rounded-md bg-[var(--accent)] px-5 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {pending ? "Создание…" : "Создать запись"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-11 cursor-pointer rounded-md border border-[var(--line)] px-5 text-sm font-semibold"
+          >
+            Закрыть
+          </button>
+        </div>
       </div>
-
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() => void submit()}
-        className="mt-5 min-h-11 w-full cursor-pointer rounded-md bg-[var(--accent)] px-5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
-      >
-        {pending ? "Создание…" : "Создать запись"}
-      </button>
-    </aside>
+    </div>
   );
 }
