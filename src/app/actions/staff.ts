@@ -20,6 +20,25 @@ function intOr(formData: FormData, key: string, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+export async function updateAdminUpsellBonusPercent(formData: FormData) {
+  const session = await requireOwnerSession();
+  const organizationId = orgIdOf(session);
+  const percent = Math.max(
+    0,
+    Math.min(100, intOr(formData, "adminUpsellBonusPercent", 0)),
+  );
+
+  await prisma.organization.update({
+    where: { id: organizationId },
+    data: { adminUpsellBonusPercent: percent },
+  });
+
+  revalidatePath("/owner/staff");
+  revalidatePath("/owner/pnl");
+  revalidatePath("/owner/my-work");
+  redirect("/owner/staff");
+}
+
 export async function upsertStaffProfile(formData: FormData) {
   const session = await requireOwnerSession();
   const organizationId = orgIdOf(session);
@@ -34,9 +53,13 @@ export async function upsertStaffProfile(formData: FormData) {
   if (!userId) throw new Error("Выберите сотрудника");
 
   const membership = await prisma.membership.findFirst({
-    where: { organizationId, userId, role: "STAFF" },
+    where: {
+      organizationId,
+      userId,
+      role: { in: ["STAFF", "ADMIN"] },
+    },
   });
-  if (!membership) throw new Error("Пользователь не в роли персонала");
+  if (!membership) throw new Error("Пользователь не в роли персонала или администратора");
 
   if (id) {
     await prisma.staffProfile.updateMany({

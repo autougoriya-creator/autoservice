@@ -107,6 +107,7 @@ export async function createClientSelfBooking(formData: FormData) {
       startsAt,
       durationMin: service.durationMin,
       status: "NEW_FROM_CLIENT",
+      fromClient: true,
       lines: {
         create: [
           {

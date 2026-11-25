@@ -50,6 +50,9 @@ model Organization {
   slug      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  /// % бонуса администратору от суммы доп. услуг (допродажа после самозаписи)
+  adminUpsellBonusPercent Int @default(0)
+  workOrderSeq      Int              @default(0)
 
   memberships     Membership[]
   posts           ServicePost[]
@@ -68,7 +71,6 @@ model Organization {
   serviceFluidNorms ServiceFluidNorm[]
   vehicleClasses    VehicleClass[]
   serviceClassPrices ServiceClassPrice[]
-  workOrderSeq      Int              @default(0)
 }
 
 model User {
@@ -206,6 +208,8 @@ model Booking {
   cancelledAt      DateTime?
   /// ЗН, созданный из этой записи (клиент приехал)
   workOrderId      String?       @unique
+  /// Самозапись из ЛК клиента (не сбрасывается при подтверждении)
+  fromClient       Boolean       @default(false)
   createdAt        DateTime      @default(now())
 
   organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)

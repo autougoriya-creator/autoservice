@@ -36,6 +36,8 @@ async function main() {
       name: "Автомойка Север",
       slug: "sever",
       workOrderSeq: 0,
+      /// 15% бонуса админу от суммы доп. услуг после самозаписи
+      adminUpsellBonusPercent: 15,
     },
   });
 
@@ -407,6 +409,7 @@ async function main() {
     workOrderId?: string;
     cancelReason?: string;
     cancelledAt?: Date;
+    fromClient?: boolean;
   }) {
     const lines = opts.serviceNames.map((name) => {
       const s = svc[name];
@@ -445,6 +448,8 @@ async function main() {
         workOrderId: opts.workOrderId,
         cancelReason: opts.cancelReason,
         cancelledAt: opts.cancelledAt,
+        fromClient:
+          opts.fromClient ?? opts.status === BookingStatus.NEW_FROM_CLIENT,
         lines: { create: lines },
       },
     });
@@ -734,6 +739,37 @@ async function main() {
     workOrderId: woClosedIvan.id,
   });
 
+  // Самозапись на 1 услугу → ЗН закрыт с допродажами (бонус админу)
+  const closedUpsell = at(12, 30);
+  const woUpsellAdmin = await createWorkOrder({
+    customerId: customerAlex.id,
+    vehicleId: camry.id,
+    status: WorkOrderStatus.CLOSED,
+    completedAt: closedUpsell,
+    paidAt: closedUpsell,
+    paymentMethod: PaymentMethod.TERMINAL,
+    postId: posts[0].id,
+    scheduledAt: closedUpsell,
+    notes:
+      "Самозапись: экспресс. На месте добавили пылесос и мойку двигателя — бонус админу",
+    lines: [
+      { serviceId: services[0].id },
+      { serviceId: services[5].id },
+      { serviceId: services[4].id },
+    ],
+  });
+  await seedBooking({
+    postId: posts[0].id,
+    startsAt: closedUpsell,
+    status: BookingStatus.CONFIRMED,
+    fromClient: true,
+    vehicleInfo: "Toyota Camry · А123ВС777",
+    serviceNames: ["Экспресс-мойка"],
+    customerId: customerAlex.id,
+    vehicleId: camry.id,
+    workOrderId: woUpsellAdmin.id,
+  });
+
   await createWorkOrder({
     customerId: customerAlex.id,
     vehicleId: camry.id,
@@ -786,6 +822,17 @@ async function main() {
         completedAt: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000),
       },
     ],
+  });
+
+  const profileOlga = await prisma.staffProfile.create({
+    data: {
+      organizationId: org.id,
+      userId: admin.id,
+      title: "Администратор",
+      payMode: PayMode.SALARY,
+      dealPercent: 0,
+      salaryRub: 65000,
+    },
   });
 
   const profileSergey = await prisma.staffProfile.create({
@@ -869,6 +916,7 @@ async function main() {
 
   await prisma.staffShift.createMany({
     data: [
+      shift(profileOlga.id, posts[0].id, 8, 20, 0),
       shift(profileSergey.id, posts[0].id, 8, 16, 0),
       shift(profileSergey.id, posts[0].id, 8, 16, 1),
       shift(profilePavel.id, posts[1].id, 10, 18, 0),
@@ -882,8 +930,8 @@ async function main() {
   console.log("Seed OK");
   console.log("Demo tenant:", org.name, `(${org.slug})`);
   console.log("Logins (mock auth, no password):");
-  console.log("  owner@demo.local     → владелец (ЗП, экономика)");
-  console.log("  admin@demo.local      → администратор (стол, клиенты, график)");
+  console.log("  owner@demo.local     → владелец (ЗП, экономика, % бонуса админу)");
+  console.log("  admin@demo.local      → администратор (оклад + бонус допродаж)");
   console.log("  staff@demo.local      → сотрудник / мойщик (сделка 35%)");
   console.log("  washer@demo.local     → сотрудник / мойщик (сделка 30%)");
   console.log("  mechanic@demo.local   → сотрудник / слесарь (оклад)");
