@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useEffect,
   useMemo,
@@ -47,6 +48,7 @@ export function DeskDateNav({
   /** Local YYYY-MM-DD keys that have bookings / open ЗН */
   busyDates: string[];
 }) {
+  const router = useRouter();
   const day = parseBoardDate(dayIsoParam);
   const prev = formatBoardDateParam(addDays(day, -1));
   const next = formatBoardDateParam(addDays(day, 1));
@@ -55,14 +57,17 @@ export function DeskDateNav({
 
   const busySet = useMemo(() => new Set(busyDates), [busyDates]);
   const [open, setOpen] = useState(false);
-  const [viewMonth, setViewMonth] = useState(
-    () => new Date(day.getFullYear(), day.getMonth(), 1),
-  );
+  const [viewMonth, setViewMonth] = useState(() => {
+    const d = parseBoardDate(dayIsoParam);
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
   const rootRef = useRef<HTMLDivElement>(null);
 
+  // Только dayIsoParam — иначе новый Date() каждый рендер крутит setState в цикле.
   useEffect(() => {
-    setViewMonth(new Date(day.getFullYear(), day.getMonth(), 1));
-  }, [dayIsoParam, day]);
+    const d = parseBoardDate(dayIsoParam);
+    setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+  }, [dayIsoParam]);
 
   useEffect(() => {
     if (!open) return;
@@ -79,6 +84,22 @@ export function DeskDateNav({
       document.removeEventListener("mousedown", onDoc);
     };
   }, [open]);
+
+  function selectDay(key: string) {
+    setOpen(false);
+    const focusBoard = () => {
+      document.getElementById("desk-load-board")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    };
+    if (key === dayIsoParam) {
+      focusBoard();
+      return;
+    }
+    // Hash держит фокус на графике после смены дня.
+    router.push(`/owner/desk?date=${key}#desk-load-board`);
+  }
 
   const cells = monthMatrix(viewMonth);
   const monthTitle = new Intl.DateTimeFormat("ru-RU", {
@@ -99,9 +120,10 @@ export function DeskDateNav({
           href={`/owner/desk?date=${today}`}
           className={`inline-flex min-h-11 items-center rounded-md px-4 py-2 text-base font-bold tracking-wide ${
             isToday
-              ? "bg-[var(--ink)] text-[var(--surface)] shadow-sm ring-2 ring-[var(--ink)]/30"
+              ? "bg-[var(--ink)] shadow-sm ring-2 ring-[var(--ink)]/30"
               : "border border-[var(--line)] bg-white/80 text-[var(--ink)] hover:border-[var(--ink)]/30"
           }`}
+          style={isToday ? { color: "#fff" } : undefined}
         >
           Сегодня
         </Link>
@@ -181,10 +203,10 @@ export function DeskDateNav({
                 const isTodayCell = key === today;
                 const hasBusy = busySet.has(key);
                 return (
-                  <Link
+                  <button
                     key={key}
-                    href={`/owner/desk?date=${key}`}
-                    onClick={() => setOpen(false)}
+                    type="button"
+                    onClick={() => selectDay(key)}
                     className={[
                       "relative inline-flex min-h-11 flex-col items-center justify-center rounded-lg border text-sm font-semibold transition",
                       selected
@@ -194,6 +216,7 @@ export function DeskDateNav({
                           : "border-transparent bg-[var(--paper)]/70 text-[var(--ink)] hover:border-[var(--accent)]",
                     ].join(" ")}
                     aria-current={selected ? "date" : undefined}
+                    aria-label={`Открыть график за ${key}`}
                   >
                     <span className="leading-none">{cell.getDate()}</span>
                     {hasBusy ? (
@@ -204,18 +227,18 @@ export function DeskDateNav({
                             : "bg-[var(--teal)]"
                         }`}
                         title="Есть записи"
-                        aria-label="Есть записи"
+                        aria-hidden
                       />
                     ) : (
                       <span className="mt-0.5 h-2 w-2" aria-hidden />
                     )}
-                  </Link>
+                  </button>
                 );
               })}
             </div>
             <p className="mt-2 text-xs text-[var(--ink-soft)]">
               <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[var(--teal)] align-middle" />
-              зелёный кружок — есть записи или ЗН
+              клик по дню — график загрузки · зелёный — есть записи
             </p>
           </div>
         ) : null}

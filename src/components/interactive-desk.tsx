@@ -95,6 +95,15 @@ type DragState = {
   startClientY: number;
 };
 
+/** После отпускания плашки — ждём Да/Нет перед сохранением. */
+type PendingMove = {
+  next: DeskBlock;
+  previous: DeskBlock;
+  postId: string;
+  offsetMin: number;
+  durationMin: number;
+};
+
 /** Сдвиг указателя, после которого жест считается перетаскиванием, а не кликом. */
 const DRAG_THRESHOLD_PX = 5;
 
@@ -181,11 +190,17 @@ export function InteractiveDesk({
     offsetMin: number;
     durationMin: number;
   } | null>(null);
+  const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
   const trackRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const didDrag = useRef(false);
 
+  // Синхронизация с сервером только при смене initialBlocks.
+  // pendingMove в deps нельзя: сброс после «Да» откатил бы плашку на старые props
+  // до прихода refresh.
   useEffect(() => {
+    if (pendingMove) return;
     setBlocks(initialBlocks);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pendingMove только guard
   }, [initialBlocks]);
 
   const selected = blocks.find((b) => b.id === selectedId) ?? null;
@@ -283,13 +298,21 @@ export function InteractiveDesk({
       setLive(null);
       return;
     }
-    const block = blocks.find((b) => b.id === drag.id);
+    // Берём исходную плашку, а не preview из drag/live.
+    const block =
+      blocks.find((b) => b.id === drag.id) ??
+      initialBlocks.find((b) => b.id === drag.id);
     if (!block) {
       setDrag(null);
       setLive(null);
       return;
     }
-    const previous = { ...block };
+    const previous: DeskBlock = {
+      ...block,
+      postId: drag.originPostId,
+      startsAt: dateFromDayOffset(day, drag.originOffset).toISOString(),
+      durationMin: drag.originDuration,
+    };
     const nextStarts = dateFromDayOffset(day, live.offsetMin);
     const next: DeskBlock = {
       ...block,
@@ -302,20 +325,38 @@ export function InteractiveDesk({
       previous.startsAt !== next.startsAt ||
       previous.durationMin !== next.durationMin;
 
-    setBlocks((prev) => prev.map((b) => (b.id === next.id ? next : b)));
     setDrag(null);
     setLive(null);
 
-    if (changed) {
-      void persistMove(
-        next,
-        next.postId,
-        live.offsetMin,
-        live.durationMin,
-        previous,
-      );
-    }
-  }, [blocks, day, drag, live, persistMove]);
+    if (!changed) return;
+
+    // Показываем новую позицию, ждём подтверждение.
+    setBlocks((prev) => prev.map((b) => (b.id === next.id ? next : b)));
+    setPendingMove({
+      next,
+      previous,
+      postId: next.postId,
+      offsetMin: live.offsetMin,
+      durationMin: live.durationMin,
+    });
+  }, [blocks, day, drag, initialBlocks, live]);
+
+  function confirmPendingMove() {
+    if (!pendingMove) return;
+    const { next, previous, postId, offsetMin, durationMin } = pendingMove;
+    setPendingMove(null);
+    void persistMove(next, postId, offsetMin, durationMin, previous);
+  }
+
+  function rejectPendingMove() {
+    if (!pendingMove) return;
+    const { previous } = pendingMove;
+    setBlocks((prev) =>
+      prev.map((b) => (b.id === previous.id ? previous : b)),
+    );
+    setPendingMove(null);
+    setError(null);
+  }
 
   useEffect(() => {
     if (!drag) return;
@@ -336,7 +377,7 @@ export function InteractiveDesk({
     block: DeskBlock,
     mode: "move" | "resize",
   ) {
-    if (readOnly) return;
+    if (readOnly || pendingMove) return;
     // Не preventDefault на pointerdown — иначе браузер глушит dblclick.
     // Для touch достаточно CSS touch-none на плашке.
     e.stopPropagation();
@@ -370,7 +411,7 @@ export function InteractiveDesk({
   }
 
   function onTrackClick(postId: string, e: React.MouseEvent<HTMLDivElement>) {
-    if (readOnly) return;
+    if (readOnly || pendingMove) return;
     if (didDrag.current) {
       didDrag.current = false;
       return;
@@ -400,7 +441,7 @@ export function InteractiveDesk({
         <p className="text-sm text-[var(--ink-soft)]">
           {readOnly
             ? "Только просмотр закреплённых постов · двойной клик по карточке — окно заказа"
-            : "Тап по свободному слоту — новая запись · двойной клик по карточке — окно заказа · перетаскивание и край справа — как раньше"}
+            : "Тап по свободному слоту — новая запись · двойной клик по карточке — окно заказа · перенос/длительность — с подтверждением"}
         </p>
         {readOnly ? null : (
           <button
@@ -549,6 +590,7 @@ export function InteractiveDesk({
                         title="Двойной клик — открыть карточку"
                         onDoubleClick={(e) => {
                           e.stopPropagation();
+                          if (pendingMove) return;
                           if (didDrag.current) {
                             didDrag.current = false;
                             return;
@@ -612,6 +654,16 @@ export function InteractiveDesk({
       </div>
 
       <LoadBoardLegendStatic readOnly={readOnly} />
+
+      {pendingMove ? (
+        <MoveConfirmDialog
+          previous={pendingMove.previous}
+          next={pendingMove.next}
+          posts={posts}
+          onConfirm={confirmPendingMove}
+          onReject={rejectPendingMove}
+        />
+      ) : null}
 
       {selected ? (
         <DetailPanel
@@ -697,8 +749,93 @@ function LoadBoardLegendStatic({ readOnly }: { readOnly?: boolean }) {
         <span>
           {readOnly
             ? "Режим сотрудника · только просмотр"
-            : `Перетаскивание · ${BOARD_SNAP_MIN} мин`}
+            : `Перетаскивание с подтверждением · ${BOARD_SNAP_MIN} мин`}
         </span>
+      </div>
+    </div>
+  );
+}
+
+function postNameOf(posts: Post[], postId: string) {
+  return posts.find((p) => p.id === postId)?.name ?? "пост";
+}
+
+function MoveConfirmDialog({
+  previous,
+  next,
+  posts,
+  onConfirm,
+  onReject,
+}: {
+  previous: DeskBlock;
+  next: DeskBlock;
+  posts: Post[];
+  onConfirm: () => void;
+  onReject: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onReject();
+      if (e.key === "Enter") onConfirm();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onConfirm, onReject]);
+
+  const fromLabel = `${formatClock(previous.startsAt)} · ${previous.durationMin} мин · ${postNameOf(posts, previous.postId)}`;
+  const toLabel = `${formatClock(next.startsAt)} · ${next.durationMin} мин · ${postNameOf(posts, next.postId)}`;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-[var(--ink)]/45 p-3 sm:items-center sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="move-confirm-title"
+      onClick={onReject}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-[var(--line)] bg-white p-5 shadow-[0_24px_60px_rgba(20,32,42,0.28)] sm:p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">
+          Перенос на графике
+        </p>
+        <h2
+          id="move-confirm-title"
+          className="brand-mark mt-1 text-2xl text-[var(--ink)]"
+        >
+          Изменить время?
+        </h2>
+        <p className="mt-2 text-sm text-[var(--ink-soft)]">
+          {previous.title}
+          {previous.subtitle ? ` · ${previous.subtitle}` : ""}
+        </p>
+        <dl className="mt-4 space-y-3 text-sm">
+          <div>
+            <dt className="text-xs text-[var(--ink-soft)]">Было</dt>
+            <dd className="font-medium text-[var(--ink)]">{fromLabel}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-[var(--ink-soft)]">Станет</dt>
+            <dd className="font-semibold text-[var(--ink)]">{toLabel}</dd>
+          </div>
+        </dl>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="min-h-11 cursor-pointer rounded-md bg-[var(--accent)] px-5 text-sm font-semibold text-white hover:bg-[var(--accent-deep)]"
+          >
+            Да
+          </button>
+          <button
+            type="button"
+            onClick={onReject}
+            className="min-h-11 cursor-pointer rounded-md border border-[var(--line)] px-5 text-sm font-semibold"
+          >
+            Нет
+          </button>
+        </div>
       </div>
     </div>
   );
