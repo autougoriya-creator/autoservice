@@ -35,7 +35,7 @@ export default async function ClientBookPage() {
   }
 
   const horizon = new Date();
-  horizon.setDate(horizon.getDate() + 8);
+  horizon.setDate(horizon.getDate() + 15);
 
   const [services, posts, bookings, workOrders] = await Promise.all([
     prisma.service.findMany({
@@ -106,7 +106,7 @@ export default async function ClientBookPage() {
       <SectionTitle
         eyebrow="Запись"
         title="Онлайн-запись"
-        description="Выберите услугу, автомобиль и свободный слот. Заявка придёт со статусом «Новая от клиента» — заказ-наряд создадут, когда вы приедете."
+        description="Выберите услугу, день в календаре и время. Занятые слоты серые. Заявка — «Новая от клиента»: сразу в вашем списке и на графике администратора."
       />
 
       <ClientBookingForm
