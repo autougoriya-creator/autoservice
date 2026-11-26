@@ -4,7 +4,6 @@ import {
   updateAssignmentShare,
   updatePostHours,
 } from "@/app/actions/posts";
-import { replacePostStaffNow } from "@/app/actions/staff";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime, bookingStatusLabel } from "@/lib/format";
@@ -290,42 +289,6 @@ export default async function PostsBoardPage() {
                   </form>
                 ) : null}
 
-                {canAssign ? (
-                  <form
-                    action={replacePostStaffNow}
-                    className="mt-2 space-y-2 rounded-lg border border-[var(--line)] bg-[var(--paper)]/60 px-3 py-3"
-                  >
-                    <input type="hidden" name="postId" value={post.id} />
-                    <input type="hidden" name="replaceAll" value="1" />
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-soft)]">
-                      Замена сейчас
-                    </p>
-                    <Field
-                      label="Кто заступает"
-                      htmlFor={`replace-in-${post.id}`}
-                      hint="Снимает всех текущих с поста и ставит выбранного на сегодня"
-                    >
-                      <TextSelect
-                        id={`replace-in-${post.id}`}
-                        name="incomingStaffProfileId"
-                        required
-                        defaultValue=""
-                      >
-                        <option value="" disabled>
-                          Выберите…
-                        </option>
-                        {floorProfiles.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.user.name} · {p.title}
-                          </option>
-                        ))}
-                      </TextSelect>
-                    </Field>
-                    <SubmitButton className="w-full sm:w-auto" variant="dark">
-                      Заменить на посту
-                    </SubmitButton>
-                  </form>
-                ) : null}
               </div>
 
               <div className="mt-5 flex-1 space-y-3">
