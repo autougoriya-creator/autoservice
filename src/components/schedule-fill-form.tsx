@@ -8,7 +8,15 @@ import {
   type BulkFillConflict,
   type BulkFillInput,
 } from "@/app/actions/staff";
-import { WEEKDAY_LABELS, type WeekdayMode } from "@/lib/schedule-fill";
+import {
+  PAST_SCHEDULE_ERROR,
+  WEEKDAY_LABELS,
+  startOfTodayLocal,
+  toDateInputValue,
+  type WeekdayMode,
+  parseDateInput,
+  isBeforeTodayLocal,
+} from "@/lib/schedule-fill";
 import { FormCard } from "@/components/forms";
 
 type PostOpt = {
@@ -48,11 +56,19 @@ export function ScheduleFillForm({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const todayMin = useMemo(
+    () => toDateInputValue(startOfTodayLocal()),
+    [],
+  );
   const [postId, setPostId] = useState("");
   const [weekdayMode, setWeekdayMode] = useState<WeekdayMode>("weekdays");
   const [customWeekdays, setCustomWeekdays] = useState<number[]>([1, 2, 3, 4, 5]);
-  const [fromDate, setFromDate] = useState(defaultFromDate);
-  const [toDate, setToDate] = useState(defaultToDate);
+  const [fromDate, setFromDate] = useState(() =>
+    defaultFromDate < todayMin ? todayMin : defaultFromDate,
+  );
+  const [toDate, setToDate] = useState(() =>
+    defaultToDate < todayMin ? todayMin : defaultToDate,
+  );
   const [staffIds, setStaffIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -96,6 +112,13 @@ export function ScheduleFillForm({
     }
     if (weekdayMode === "custom" && customWeekdays.length === 0) {
       setError("Выберите хотя бы один день недели");
+      return null;
+    }
+    const from = parseDateInput(fromDate);
+    if (!from || isBeforeTodayLocal(from)) {
+      setError(
+        `${PAST_SCHEDULE_ERROR}. Укажите дату «с» не раньше сегодня (${todayMin})`,
+      );
       return null;
     }
     setError(null);
@@ -260,6 +283,7 @@ export function ScheduleFillForm({
               <input
                 type="date"
                 required
+                min={todayMin}
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
                 className="min-h-11 w-full rounded-md border border-[var(--line)] bg-white px-3"
@@ -272,12 +296,16 @@ export function ScheduleFillForm({
               <input
                 type="date"
                 required
+                min={fromDate || todayMin}
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
                 className="min-h-11 w-full rounded-md border border-[var(--line)] bg-white px-3"
               />
             </label>
           </div>
+          <p className="text-xs text-[var(--ink-soft)]">
+            Заполнить можно только с сегодняшнего дня ({todayMin}) и позже.
+          </p>
 
           <fieldset>
             <legend className="mb-1.5 text-sm font-semibold text-[var(--ink)]">

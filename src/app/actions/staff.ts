@@ -6,12 +6,16 @@ import { prisma } from "@/lib/prisma";
 import { equalSharePercents } from "@/lib/payroll";
 import {
   MAX_BULK_PERIOD_DAYS,
+  PAST_SCHEDULE_ERROR,
   daysBetweenInclusive,
   enumerateMatchingDays,
+  isBeforeTodayLocal,
   parseDateInput,
   rangesOverlap,
   resolveWeekdays,
   shiftWindowForDay,
+  startOfTodayLocal,
+  toDateInputValue,
   type WeekdayMode,
 } from "@/lib/schedule-fill";
 import {
@@ -212,6 +216,7 @@ export async function createStaffShift(formData: FormData) {
     throw new Error("Заполните сотрудника и время смены");
   }
   if (endsAt <= startsAt) throw new Error("Конец смены должен быть позже начала");
+  if (isBeforeTodayLocal(startsAt)) throw new Error(PAST_SCHEDULE_ERROR);
 
   const profile = await prisma.staffProfile.findFirst({
     where: { id: staffProfileId, organizationId },
@@ -246,6 +251,12 @@ export async function deleteStaffShift(formData: FormData) {
   const session = await requireManagementSession();
   const organizationId = orgIdOf(session);
   const id = str(formData, "id");
+  const existing = await prisma.staffShift.findFirst({
+    where: { id, organizationId },
+  });
+  if (existing && isBeforeTodayLocal(existing.startsAt)) {
+    throw new Error(PAST_SCHEDULE_ERROR);
+  }
   await prisma.staffShift.deleteMany({ where: { id, organizationId } });
   revalidatePath("/owner/schedule");
   revalidatePath("/owner/my-work");
@@ -356,6 +367,12 @@ async function prepareBulkFill(
   if (!from || !to) return { ok: false, error: "Укажите период (даты от и до)" };
   if (to < from) {
     return { ok: false, error: "Дата «до» должна быть не раньше «от»" };
+  }
+  if (isBeforeTodayLocal(from)) {
+    return {
+      ok: false,
+      error: `${PAST_SCHEDULE_ERROR}. Укажите дату «с» не раньше сегодня (${toDateInputValue(startOfTodayLocal())})`,
+    };
   }
   if (daysBetweenInclusive(from, to) > MAX_BULK_PERIOD_DAYS) {
     return { ok: false, error: `Период не больше ${MAX_BULK_PERIOD_DAYS} дней` };
@@ -575,6 +592,13 @@ export async function applyBulkFillStaffShifts(
     }
 
     if (input.replaceExisting && plan.toDeleteIds.length > 0) {
+      const pastOverlap = prepared.data.existing.some(
+        (s) =>
+          plan.toDeleteIds.includes(s.id) && isBeforeTodayLocal(s.startsAt),
+      );
+      if (pastOverlap) {
+        return { ok: false, error: PAST_SCHEDULE_ERROR };
+      }
       await prisma.staffShift.deleteMany({
         where: {
           organizationId: prepared.data.organizationId,
@@ -632,6 +656,9 @@ export async function moveStaffShiftOnBoard(input: {
     const organizationId = orgIdOf(session);
     const day = parseDateInput(input.dayKey);
     if (!day) return { ok: false, error: "Некорректная дата" };
+    if (isBeforeTodayLocal(day)) {
+      return { ok: false, error: PAST_SCHEDULE_ERROR };
+    }
 
     const [shift, post] = await Promise.all([
       prisma.staffShift.findFirst({
@@ -646,6 +673,9 @@ export async function moveStaffShiftOnBoard(input: {
     ]);
     if (!shift) return { ok: false, error: "Смена не найдена" };
     if (!post) return { ok: false, error: "Пост не найден" };
+    if (isBeforeTodayLocal(shift.startsAt)) {
+      return { ok: false, error: PAST_SCHEDULE_ERROR };
+    }
 
     const membership = await prisma.membership.findFirst({
       where: { organizationId, userId: shift.staffProfile.userId },
@@ -711,6 +741,9 @@ export async function createStaffShiftOnBoard(input: {
     const organizationId = orgIdOf(session);
     const day = parseDateInput(input.dayKey);
     if (!day) return { ok: false, error: "Некорректная дата" };
+    if (isBeforeTodayLocal(day)) {
+      return { ok: false, error: PAST_SCHEDULE_ERROR };
+    }
 
     const [profile, post] = await Promise.all([
       prisma.staffProfile.findFirst({
@@ -787,10 +820,14 @@ export async function deleteStaffShiftOnBoard(input: {
   try {
     const session = await requireManagementSession();
     const organizationId = orgIdOf(session);
-    const result = await prisma.staffShift.deleteMany({
+    const existing = await prisma.staffShift.findFirst({
       where: { id: input.id, organizationId },
     });
-    if (result.count === 0) return { ok: false, error: "Смена не найдена" };
+    if (!existing) return { ok: false, error: "Смена не найдена" };
+    if (isBeforeTodayLocal(existing.startsAt)) {
+      return { ok: false, error: PAST_SCHEDULE_ERROR };
+    }
+    await prisma.staffShift.delete({ where: { id: existing.id } });
     revalidateSchedulePaths();
     return { ok: true };
   } catch (e) {

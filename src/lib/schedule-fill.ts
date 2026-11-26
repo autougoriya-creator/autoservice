@@ -49,6 +49,27 @@ export function toDateInputValue(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+/** Локальная полуночь «сегодня» (сервер/браузер в своей TZ). */
+export function startOfTodayLocal(now = new Date()) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+export function startOfLocalDay(date: Date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/** День раньше локального «сегодня» — правки графика запрещены. */
+export function isBeforeTodayLocal(date: Date, now = new Date()) {
+  return startOfLocalDay(date).getTime() < startOfTodayLocal(now).getTime();
+}
+
+export const PAST_SCHEDULE_ERROR =
+  "Нельзя менять график за прошедшие дни — только с сегодняшнего";
+
 /** Окно смены в локальном времени по часам поста. */
 export function shiftWindowForDay(
   day: Date,

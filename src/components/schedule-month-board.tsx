@@ -29,8 +29,13 @@ import {
   type ScheduleBoardStaff,
   type ScheduleShiftTile,
 } from "@/lib/schedule-board";
+import { PAST_SCHEDULE_ERROR } from "@/lib/schedule-fill";
 
 const DRAG_THRESHOLD_PX = 5;
+
+function isPastDayKey(dayKey: string, todayKey: string) {
+  return dayKey < todayKey;
+}
 
 type DragState = {
   id: string;
@@ -163,8 +168,8 @@ export function ScheduleMonthBoard({
       const entries = Object.entries(cellRefs.current).filter(
         ([, el]) => el != null,
       ) as [string, HTMLDivElement][];
-      let targetPost = drag.originPostId;
-      let targetDay = drag.originDayKey;
+      let targetPost = live?.postId ?? drag.originPostId;
+      let targetDay = live?.dayKey ?? drag.originDayKey;
       for (const [key, el] of entries) {
         const rect = el.getBoundingClientRect();
         if (
@@ -174,14 +179,17 @@ export function ScheduleMonthBoard({
           e.clientY <= rect.bottom
         ) {
           const [postId, dayKey] = key.split("::");
-          targetPost = postId;
-          targetDay = dayKey;
+          // В прошлое не переносим — оставляем последний допустимый target.
+          if (!isPastDayKey(dayKey, todayKey)) {
+            targetPost = postId;
+            targetDay = dayKey;
+          }
           break;
         }
       }
       setLive({ postId: targetPost, dayKey: targetDay });
     },
-    [drag],
+    [drag, live, todayKey],
   );
 
   const onPointerUp = useCallback(() => {
@@ -214,10 +222,17 @@ export function ScheduleMonthBoard({
     setDrag(null);
     setLive(null);
     if (!changed) return;
+    if (
+      isPastDayKey(previous.dayKey, todayKey) ||
+      isPastDayKey(next.dayKey, todayKey)
+    ) {
+      setError(PAST_SCHEDULE_ERROR);
+      return;
+    }
 
     setTiles((prev) => prev.map((t) => (t.id === next.id ? next : t)));
     setPendingMove({ next, previous });
-  }, [drag, initialTiles, live, tiles]);
+  }, [drag, initialTiles, live, tiles, todayKey]);
 
   function confirmPendingMove() {
     if (!pendingMove) return;
@@ -252,6 +267,7 @@ export function ScheduleMonthBoard({
 
   function beginDrag(e: ReactPointerEvent, tile: ScheduleShiftTile) {
     if (readOnly || pendingMove) return;
+    if (isPastDayKey(tile.dayKey, todayKey)) return;
     e.stopPropagation();
     didDrag.current = false;
     setCreateDraft(null);
@@ -267,6 +283,7 @@ export function ScheduleMonthBoard({
 
   function onCellClick(postId: string, dayKey: string) {
     if (readOnly || pendingMove) return;
+    if (isPastDayKey(dayKey, todayKey)) return;
     if (didDrag.current) {
       didDrag.current = false;
       return;
@@ -316,7 +333,7 @@ export function ScheduleMonthBoard({
           {" · "}
           {readOnly
             ? "только просмотр · двойной клик — карточка"
-            : "перетаскивание с подтверждением · двойной клик — карточка · тап по ячейке — назначить"}
+            : "с сегодня — перетаскивание и назначение · прошлые дни только просмотр · двойной клик — карточка"}
         </p>
       </div>
 
@@ -394,7 +411,9 @@ export function ScheduleMonthBoard({
                   (t) => t.postId === post.id && t.dayKey === dayKey,
                 );
                 const isToday = dayKey === todayKey;
+                const isPast = isPastDayKey(dayKey, todayKey);
                 const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                const cellLocked = readOnly || isPast;
                 return (
                   <div
                     key={cellKey}
@@ -402,14 +421,17 @@ export function ScheduleMonthBoard({
                       cellRefs.current[cellKey] = el;
                     }}
                     onClick={() => onCellClick(post.id, dayKey)}
+                    title={isPast ? PAST_SCHEDULE_ERROR : undefined}
                     className={`relative min-h-[88px] border-l border-[var(--line)]/70 p-1 ${
-                      readOnly ? "cursor-default" : "cursor-cell"
+                      cellLocked ? "cursor-default" : "cursor-cell"
                     } ${
-                      isToday
-                        ? "bg-[var(--accent)]/[0.06]"
-                        : isWeekend
-                          ? "bg-[var(--ink)]/[0.02]"
-                          : "bg-[var(--paper)]/20"
+                      isPast
+                        ? "bg-[var(--ink)]/[0.05] opacity-70"
+                        : isToday
+                          ? "bg-[var(--accent)]/[0.06]"
+                          : isWeekend
+                            ? "bg-[var(--ink)]/[0.02]"
+                            : "bg-[var(--paper)]/20"
                     } ${
                       live &&
                       drag &&
@@ -423,12 +445,19 @@ export function ScheduleMonthBoard({
                       {cellTiles.map((tile) => {
                         const tone = staffTileTone(tile.staffProfileId);
                         const active = selectedId === tile.id;
+                        const tileLocked = cellLocked;
                         return (
                           <div
                             key={tile.id}
                             role="button"
                             tabIndex={0}
-                            title="Двойной клик — карточка сотрудника"
+                            title={
+                              tileLocked
+                                ? isPast
+                                  ? PAST_SCHEDULE_ERROR
+                                  : "Двойной клик — карточка"
+                                : "Двойной клик — карточка · перетащите, чтобы перенести"
+                            }
                             onDoubleClick={(e) => {
                               e.stopPropagation();
                               if (pendingMove) return;
@@ -445,7 +474,7 @@ export function ScheduleMonthBoard({
                             }}
                             onPointerDown={(e) => beginDrag(e, tile)}
                             className={`rounded-md border px-1.5 py-1 text-[11px] leading-tight shadow-sm ${
-                              readOnly ? "" : "touch-none"
+                              tileLocked ? "" : "touch-none"
                             } ${tone.bg} ${tone.text} ${tone.border} ${
                               active
                                 ? "ring-2 ring-[var(--accent)] ring-offset-1"
@@ -453,7 +482,7 @@ export function ScheduleMonthBoard({
                             } ${
                               drag?.id === tile.id ? "opacity-90 z-10" : ""
                             } ${
-                              readOnly
+                              tileLocked
                                 ? "cursor-pointer"
                                 : "cursor-grab active:cursor-grabbing"
                             }`}
@@ -484,8 +513,8 @@ export function ScheduleMonthBoard({
 
       <p className="text-xs text-[var(--ink-soft)]">
         Каждая плашка — сотрудник на смене. Цвет закреплён за человеком.
-        Администраторы (смены без поста) в этой сетке не показываются — они в
-        таблице ниже.
+        Прошедшие дни нельзя менять. Администраторы (смены без поста) в этой
+        сетке не показываются.
       </p>
 
       {pendingMove ? (
@@ -503,7 +532,8 @@ export function ScheduleMonthBoard({
           tile={selected}
           posts={posts}
           canEditStaff={canEditStaff}
-          readOnly={readOnly}
+          readOnly={readOnly || isPastDayKey(selected.dayKey, todayKey)}
+          todayKey={todayKey}
           onClose={() => setSelectedId(null)}
           onMoved={(next) => {
             setTiles((prev) =>
@@ -627,6 +657,7 @@ function TileDetailPanel({
   posts,
   canEditStaff,
   readOnly,
+  todayKey,
   onClose,
   onMoved,
   onRemoved,
@@ -636,6 +667,7 @@ function TileDetailPanel({
   posts: ScheduleBoardPost[];
   canEditStaff: boolean;
   readOnly: boolean;
+  todayKey: string;
   onClose: () => void;
   onMoved: (tile: ScheduleShiftTile) => void;
   onRemoved: (id: string) => void;
@@ -644,6 +676,7 @@ function TileDetailPanel({
   const [postId, setPostId] = useState(tile.postId);
   const [dayKey, setDayKey] = useState(tile.dayKey);
   const [pending, setPending] = useState(false);
+  const isPast = isPastDayKey(tile.dayKey, todayKey);
 
   useEffect(() => {
     setPostId(tile.postId);
@@ -659,6 +692,10 @@ function TileDetailPanel({
   }, [onClose]);
 
   async function save() {
+    if (isPastDayKey(dayKey, todayKey)) {
+      onError(PAST_SCHEDULE_ERROR);
+      return;
+    }
     setPending(true);
     const result = await moveStaffShiftOnBoard({
       id: tile.id,
@@ -674,6 +711,10 @@ function TileDetailPanel({
   }
 
   async function remove() {
+    if (isPast) {
+      onError(PAST_SCHEDULE_ERROR);
+      return;
+    }
     setPending(true);
     const result = await deleteStaffShiftOnBoard({ id: tile.id });
     setPending(false);
@@ -742,7 +783,7 @@ function TileDetailPanel({
 
         {readOnly ? (
           <p className="text-xs text-[var(--ink-soft)]">
-            Редактирование недоступно
+            {isPast ? PAST_SCHEDULE_ERROR : "Редактирование недоступно"}
           </p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
@@ -765,6 +806,7 @@ function TileDetailPanel({
               <input
                 type="date"
                 value={dayKey}
+                min={todayKey}
                 onChange={(e) => setDayKey(e.target.value)}
                 className="min-h-11 w-full rounded-md border border-[var(--line)] px-3"
               />
