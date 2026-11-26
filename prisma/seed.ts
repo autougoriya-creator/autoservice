@@ -920,17 +920,20 @@ async function main() {
     };
   };
 
+  // Смены на 14 дней вперёд — самозапись и гейт записи (пост в работе + исполнитель)
+  const forwardShifts = [];
+  for (let d = 0; d < 14; d++) {
+    forwardShifts.push(shift(profileSergey.id, posts[0].id, 8, 16, d));
+    forwardShifts.push(shift(profilePavel.id, posts[1].id, 10, 18, d));
+    forwardShifts.push(shift(profileDmitry.id, posts[2].id, 9, 18, d));
+  }
   await prisma.staffShift.createMany({
     data: [
       // Админ — смена без поста; бонус считается по закрытым ЗН в окне смены
       shift(profileOlga.id, null, 8, 20, 0),
-      shift(profileSergey.id, posts[0].id, 8, 16, 0),
-      shift(profileSergey.id, posts[0].id, 8, 16, 1),
-      shift(profilePavel.id, posts[1].id, 10, 18, 0),
       shift(profilePavel.id, posts[1].id, 10, 18, -1),
-      shift(profileDmitry.id, posts[2].id, 9, 18, 0),
-      shift(profileDmitry.id, posts[2].id, 9, 18, 2),
       shift(profileDmitry.id, posts[2].id, 9, 15, -2),
+      ...forwardShifts,
     ],
   });
 

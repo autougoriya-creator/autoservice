@@ -1,10 +1,16 @@
 import { BOARD_SNAP_MIN } from "@/lib/load-board";
+import {
+  slotCoveredByShift,
+  type PostShiftCover,
+} from "@/lib/post-booking-gate";
 
 export type BusyInterval = {
   startsAt: Date;
   durationMin: number;
   postId: string;
 };
+
+export type { PostShiftCover };
 
 export type SlotOption = {
   /** ISO start time */
@@ -96,8 +102,17 @@ export function buildDaySlots(params: {
   busy: BusyInterval[];
   durationMin: number;
   from?: Date;
+  /** Смены на постах: без покрытия слот недоступен */
+  shifts?: PostShiftCover[];
 }): DaySlot[] {
-  const { dayKey, posts, busy, durationMin, from = new Date() } = params;
+  const {
+    dayKey,
+    posts,
+    busy,
+    durationMin,
+    from = new Date(),
+    shifts = [],
+  } = params;
   const day = parseLocalDayKey(dayKey);
   if (!day || posts.length === 0) return [];
 
@@ -125,6 +140,11 @@ export function buildDaySlots(params: {
           const startH = (post.workStartHour ?? 8) * 60;
           const endH = (post.workEndHour ?? 20) * 60;
           if (minuteOfDay < startH || endMinuteOfDay > endH) return false;
+          if (
+            !slotCoveredByShift(startsAt, duration, shifts, post.id)
+          ) {
+            return false;
+          }
           const postBusy = busy.filter((b) => b.postId === post.id);
           return !postBusy.some((b) =>
             overlaps(
@@ -165,6 +185,7 @@ export function buildClientSlots(params: {
   durationMin: number;
   from?: Date;
   days?: number;
+  shifts?: PostShiftCover[];
 }): SlotOption[] {
   const {
     posts,
@@ -172,6 +193,7 @@ export function buildClientSlots(params: {
     durationMin,
     from = new Date(),
     days = 7,
+    shifts = [],
   } = params;
 
   if (posts.length === 0) return [];
@@ -184,6 +206,7 @@ export function buildClientSlots(params: {
       busy,
       durationMin,
       from,
+      shifts,
     })) {
       if (!slot.available || !slot.postId) continue;
       slots.push({

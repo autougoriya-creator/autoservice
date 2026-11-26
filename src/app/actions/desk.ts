@@ -17,6 +17,7 @@ import {
 } from "@/lib/booking-plan";
 import { normalizePhone } from "@/lib/phone";
 import { isWithinPostHours } from "@/lib/payroll";
+import { assertPostSlotBookable } from "@/lib/post-booking-gate";
 import { resolveServicePriceRub } from "@/lib/pricing";
 import { orgIdOf, requireManagementSession } from "@/lib/tenant";
 import { canTransitionWorkOrderStatus } from "@/lib/work-order";
@@ -37,7 +38,24 @@ function postHoursError(
     return null;
   }
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `Время вне графика «${post.name}» (${pad(post.workStartHour)}:00–${pad(post.workEndHour)}:00)`;
+  return `Время вне шаблона смены «${post.name}» (${pad(post.workStartHour)}:00–${pad(post.workEndHour)}:00)`;
+}
+
+/** Часы шаблона + смена с исполнителем на слот. */
+async function postBookingGateError(
+  organizationId: string,
+  post: {
+    id: string;
+    name: string;
+    workStartHour: number;
+    workEndHour: number;
+  },
+  startsAt: Date,
+  durationMin: number,
+) {
+  const hoursErr = postHoursError(startsAt, durationMin, post);
+  if (hoursErr) return hoursErr;
+  return assertPostSlotBookable(organizationId, post, startsAt, durationMin);
 }
 
 function revalidateDesk() {
@@ -93,16 +111,26 @@ export async function moveDeskItem(input: {
         data.durationMin = Math.round(input.durationMin / 15) * 15;
         durationMin = data.durationMin;
       }
-      const hoursErr = postHoursError(startsAt, durationMin, post);
-      if (hoursErr) return { ok: false, error: hoursErr };
+      const gateErr = await postBookingGateError(
+        organizationId,
+        post,
+        startsAt,
+        durationMin,
+      );
+      if (gateErr) return { ok: false, error: gateErr };
       const updated = await prisma.booking.updateMany({
         where: { id: input.id, organizationId },
         data,
       });
       if (updated.count === 0) return { ok: false, error: "Запись не найдена" };
     } else {
-      const hoursErr = postHoursError(startsAt, 60, post);
-      if (hoursErr) return { ok: false, error: hoursErr };
+      const gateErr = await postBookingGateError(
+        organizationId,
+        post,
+        startsAt,
+        60,
+      );
+      if (gateErr) return { ok: false, error: gateErr };
       const updated = await prisma.workOrder.updateMany({
         where: { id: input.id, organizationId },
         data: { postId: input.postId, scheduledAt: startsAt },
@@ -184,8 +212,13 @@ export async function updateDeskBooking(input: {
         ) * 15,
       ),
     );
-    const hoursErr = postHoursError(startsAt, durationMin, post);
-    if (hoursErr) return { ok: false, error: hoursErr };
+    const gateErr = await postBookingGateError(
+      organizationId,
+      post,
+      startsAt,
+      durationMin,
+    );
+    if (gateErr) return { ok: false, error: gateErr };
     const plannedAmountRub =
       typeof input.plannedAmountRub === "number"
         ? Math.max(0, Math.round(input.plannedAmountRub))
@@ -453,8 +486,13 @@ export async function updateDeskWorkOrder(input: {
       where: { id: input.postId, organizationId, isActive: true },
     });
     if (!post) return { ok: false, error: "Пост не найден" };
-    const hoursErr = postHoursError(startsAt, 60, post);
-    if (hoursErr) return { ok: false, error: hoursErr };
+    const gateErr = await postBookingGateError(
+      organizationId,
+      post,
+      startsAt,
+      60,
+    );
+    if (gateErr) return { ok: false, error: gateErr };
     const nextStatus = input.status as "IN_PROGRESS" | "CLOSED";
     if (!canTransitionWorkOrderStatus(current.status, nextStatus)) {
       return {
@@ -599,8 +637,13 @@ export async function createDeskBooking(input: {
         ) * 15,
       ),
     );
-    const hoursErr = postHoursError(startsAt, durationMin, post);
-    if (hoursErr) return { ok: false, error: hoursErr };
+    const gateErr = await postBookingGateError(
+      organizationId,
+      post,
+      startsAt,
+      durationMin,
+    );
+    if (gateErr) return { ok: false, error: gateErr };
     const serviceName = summarizeServiceNames(lines);
 
     const booking = await prisma.booking.create({
