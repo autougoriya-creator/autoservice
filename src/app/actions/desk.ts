@@ -20,6 +20,7 @@ import { isWithinPostHours } from "@/lib/payroll";
 import { assertPostSlotBookable } from "@/lib/post-booking-gate";
 import { resolveServicePriceRub } from "@/lib/pricing";
 import { orgIdOf, requireManagementSession } from "@/lib/tenant";
+import { applyNormWriteoff } from "@/lib/warehouse";
 import { canTransitionWorkOrderStatus } from "@/lib/work-order";
 
 function postHoursError(
@@ -518,6 +519,16 @@ export async function updateDeskWorkOrder(input: {
     });
     if (updated.count === 0) {
       return { ok: false, error: "Заказ-наряд не найден" };
+    }
+    if (closing) {
+      await applyNormWriteoff({
+        organizationId,
+        workOrderId: input.id,
+        createdById: session.id,
+        note: "Списание по нормам при закрытии ЗН со стола",
+      });
+      revalidatePath("/owner/warehouse");
+      revalidatePath("/owner/warehouse/reconcile");
     }
     revalidateDesk();
     return { ok: true };
