@@ -6,12 +6,16 @@ import { prisma } from "@/lib/prisma";
 import { equalSharePercents } from "@/lib/payroll";
 import {
   MAX_BULK_PERIOD_DAYS,
+  PAST_SCHEDULE_ERROR,
   daysBetweenInclusive,
   enumerateMatchingDays,
+  isBeforeTodayLocal,
   parseDateInput,
   rangesOverlap,
   resolveWeekdays,
   shiftWindowForDay,
+  startOfTodayLocal,
+  toDateInputValue,
   type WeekdayMode,
 } from "@/lib/schedule-fill";
 import {
@@ -212,6 +216,7 @@ export async function createStaffShift(formData: FormData) {
     throw new Error("Заполните сотрудника и время смены");
   }
   if (endsAt <= startsAt) throw new Error("Конец смены должен быть позже начала");
+  if (isBeforeTodayLocal(startsAt)) throw new Error(PAST_SCHEDULE_ERROR);
 
   const profile = await prisma.staffProfile.findFirst({
     where: { id: staffProfileId, organizationId },
@@ -246,6 +251,12 @@ export async function deleteStaffShift(formData: FormData) {
   const session = await requireManagementSession();
   const organizationId = orgIdOf(session);
   const id = str(formData, "id");
+  const existing = await prisma.staffShift.findFirst({
+    where: { id, organizationId },
+  });
+  if (existing && isBeforeTodayLocal(existing.startsAt)) {
+    throw new Error(PAST_SCHEDULE_ERROR);
+  }
   await prisma.staffShift.deleteMany({ where: { id, organizationId } });
   revalidatePath("/owner/schedule");
   revalidatePath("/owner/my-work");
@@ -278,44 +289,98 @@ async function rebalancePostShares(organizationId: string, postId: string) {
   );
 }
 
-/**
- * Массово создать смены по графику поста:
- * пост + режим дней недели + сотрудники + период.
- */
-export async function bulkFillStaffShifts(formData: FormData) {
+export type BulkFillInput = {
+  postId: string;
+  weekdayMode: WeekdayMode;
+  customWeekdays?: number[];
+  fromDate: string;
+  toDate: string;
+  staffProfileIds: string[];
+};
+
+export type BulkFillConflict = {
+  staffProfileId: string;
+  staffName: string;
+  dayKey: string;
+  existingPostName: string | null;
+  existingStartsAt: string;
+  existingEndsAt: string;
+  plannedStartsAt: string;
+  plannedEndsAt: string;
+};
+
+export type BulkFillPreviewResult =
+  | {
+      ok: true;
+      plannedCount: number;
+      conflicts: BulkFillConflict[];
+    }
+  | { ok: false; error: string };
+
+export type BulkFillApplyResult =
+  | { ok: true; created: number; replaced: number }
+  | { ok: false; error: string; conflicts?: BulkFillConflict[] };
+
+type PreparedBulkFill = {
+  organizationId: string;
+  postId: string;
+  staffIds: string[];
+  days: Date[];
+  post: { workStartHour: number; workEndHour: number; name: string };
+  profileNames: Map<string, string>;
+  existing: {
+    id: string;
+    staffProfileId: string;
+    startsAt: Date;
+    endsAt: Date;
+    post: { name: string } | null;
+  }[];
+};
+
+function toDateInputKey(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+async function prepareBulkFill(
+  input: BulkFillInput,
+): Promise<{ ok: true; data: PreparedBulkFill } | { ok: false; error: string }> {
   const session = await requireManagementSession();
   const organizationId = orgIdOf(session);
-  const postId = str(formData, "postId");
-  const modeRaw = str(formData, "weekdayMode") || "weekdays";
+  const postId = input.postId?.trim() ?? "";
   const mode = (
-    ["all", "weekdays", "weekends", "custom"].includes(modeRaw)
-      ? modeRaw
+    ["all", "weekdays", "weekends", "custom"].includes(input.weekdayMode)
+      ? input.weekdayMode
       : "weekdays"
   ) as WeekdayMode;
-  const from = parseDateInput(str(formData, "fromDate"));
-  const to = parseDateInput(str(formData, "toDate"));
-  const staffIds = formData
-    .getAll("staffProfileId")
-    .filter((v): v is string => typeof v === "string" && v.trim() !== "")
-    .map((v) => v.trim());
-  const customWeekdays = formData
-    .getAll("weekday")
-    .map((v) => (typeof v === "string" ? Number.parseInt(v, 10) : NaN))
-    .filter((n) => Number.isFinite(n));
-  const ensureAssignment = str(formData, "ensureAssignment") === "1";
-  const replaceExisting = str(formData, "replaceExisting") === "1";
+  const from = parseDateInput(input.fromDate);
+  const to = parseDateInput(input.toDate);
+  const staffIds = [...new Set(input.staffProfileIds.map((id) => id.trim()).filter(Boolean))];
+  const customWeekdays = (input.customWeekdays ?? []).filter(
+    (n) => Number.isFinite(n) && n >= 1 && n <= 7,
+  );
 
-  if (!postId) throw new Error("Выберите пост");
-  if (staffIds.length === 0) throw new Error("Выберите хотя бы одного сотрудника");
-  if (!from || !to) throw new Error("Укажите период (даты от и до)");
-  if (to < from) throw new Error("Дата «до» должна быть не раньше «от»");
+  if (!postId) return { ok: false, error: "Выберите пост" };
+  if (staffIds.length === 0) {
+    return { ok: false, error: "Выберите хотя бы одного сотрудника" };
+  }
+  if (!from || !to) return { ok: false, error: "Укажите период (даты от и до)" };
+  if (to < from) {
+    return { ok: false, error: "Дата «до» должна быть не раньше «от»" };
+  }
+  if (isBeforeTodayLocal(from)) {
+    return {
+      ok: false,
+      error: `${PAST_SCHEDULE_ERROR}. Укажите дату «с» не раньше сегодня (${toDateInputValue(startOfTodayLocal())})`,
+    };
+  }
   if (daysBetweenInclusive(from, to) > MAX_BULK_PERIOD_DAYS) {
-    throw new Error(`Период не больше ${MAX_BULK_PERIOD_DAYS} дней`);
+    return { ok: false, error: `Период не больше ${MAX_BULK_PERIOD_DAYS} дней` };
   }
 
   const weekdays = resolveWeekdays(mode, customWeekdays);
   if (weekdays.size === 0) {
-    throw new Error("Выберите хотя бы один день недели");
+    return { ok: false, error: "Выберите хотя бы один день недели" };
   }
 
   const [post, profiles] = await Promise.all([
@@ -328,11 +393,12 @@ export async function bulkFillStaffShifts(formData: FormData) {
         id: { in: staffIds },
         isActive: true,
       },
+      include: { user: { select: { name: true } } },
     }),
   ]);
-  if (!post) throw new Error("Пост не найден");
+  if (!post) return { ok: false, error: "Пост не найден" };
   if (profiles.length !== staffIds.length) {
-    throw new Error("Не все выбранные сотрудники найдены");
+    return { ok: false, error: "Не все выбранные сотрудники найдены" };
   }
 
   const adminMemberships = await prisma.membership.findMany({
@@ -344,12 +410,15 @@ export async function bulkFillStaffShifts(formData: FormData) {
     select: { userId: true },
   });
   if (adminMemberships.length > 0) {
-    throw new Error("Администратора нельзя ставить на пост в массовом заполнении");
+    return {
+      ok: false,
+      error: "Администратора нельзя ставить на пост в массовом заполнении",
+    };
   }
 
   const days = enumerateMatchingDays(from, to, weekdays);
   if (days.length === 0) {
-    throw new Error("В периоде нет дней по выбранному режиму");
+    return { ok: false, error: "В периоде нет дней по выбранному режиму" };
   }
 
   const periodStart = shiftWindowForDay(
@@ -366,13 +435,37 @@ export async function bulkFillStaffShifts(formData: FormData) {
   const existing = await prisma.staffShift.findMany({
     where: {
       organizationId,
-      postId,
       staffProfileId: { in: staffIds },
       startsAt: { lt: periodEnd },
       endsAt: { gt: periodStart },
     },
+    include: { post: { select: { name: true } } },
   });
 
+  const profileNames = new Map(
+    profiles.map((p) => [p.id, p.user.name] as const),
+  );
+
+  return {
+    ok: true,
+    data: {
+      organizationId,
+      postId,
+      staffIds,
+      days,
+      post: {
+        workStartHour: post.workStartHour,
+        workEndHour: post.workEndHour,
+        name: post.name,
+      },
+      profileNames,
+      existing,
+    },
+  };
+}
+
+function collectBulkPlan(data: PreparedBulkFill) {
+  const conflicts: BulkFillConflict[] = [];
   const toCreate: {
     organizationId: string;
     staffProfileId: string;
@@ -382,34 +475,39 @@ export async function bulkFillStaffShifts(formData: FormData) {
     note: string;
   }[] = [];
   const toDeleteIds: string[] = [];
-  let skipped = 0;
 
-  for (const day of days) {
+  for (const day of data.days) {
     const { startsAt, endsAt } = shiftWindowForDay(
       day,
-      post.workStartHour,
-      post.workEndHour,
+      data.post.workStartHour,
+      data.post.workEndHour,
     );
     if (endsAt <= startsAt) continue;
+    const dayKey = toDateInputKey(day);
 
-    for (const staffProfileId of staffIds) {
-      const overlaps = existing.filter(
+    for (const staffProfileId of data.staffIds) {
+      const overlaps = data.existing.filter(
         (s) =>
           s.staffProfileId === staffProfileId &&
           rangesOverlap(s.startsAt, s.endsAt, startsAt, endsAt),
       );
-      if (overlaps.length > 0) {
-        if (replaceExisting) {
-          toDeleteIds.push(...overlaps.map((s) => s.id));
-        } else {
-          skipped += 1;
-          continue;
-        }
+      for (const overlap of overlaps) {
+        conflicts.push({
+          staffProfileId,
+          staffName: data.profileNames.get(staffProfileId) ?? "Сотрудник",
+          dayKey,
+          existingPostName: overlap.post?.name ?? null,
+          existingStartsAt: overlap.startsAt.toISOString(),
+          existingEndsAt: overlap.endsAt.toISOString(),
+          plannedStartsAt: startsAt.toISOString(),
+          plannedEndsAt: endsAt.toISOString(),
+        });
+        toDeleteIds.push(overlap.id);
       }
       toCreate.push({
-        organizationId,
+        organizationId: data.organizationId,
         staffProfileId,
-        postId,
+        postId: data.postId,
         startsAt,
         endsAt,
         note: "Массовое заполнение",
@@ -417,161 +515,20 @@ export async function bulkFillStaffShifts(formData: FormData) {
     }
   }
 
-  if (toDeleteIds.length > 0) {
-    await prisma.staffShift.deleteMany({
-      where: { organizationId, id: { in: [...new Set(toDeleteIds)] } },
-    });
-  }
-
-  if (toCreate.length > 0) {
-    await prisma.staffShift.createMany({ data: toCreate });
-  }
-
-  if (ensureAssignment) {
-    for (const staffProfileId of staffIds) {
-      const open = await prisma.postAssignment.findFirst({
-        where: {
-          organizationId,
-          postId,
-          staffProfileId,
-          activeTo: null,
-        },
-      });
-      if (open) continue;
-      await prisma.postAssignment.create({
-        data: {
-          organizationId,
-          postId,
-          staffProfileId,
-          sharePercent: 100,
-        },
-      });
-    }
-    await rebalancePostShares(organizationId, postId);
-  }
-
-  revalidateSchedulePaths();
-  redirect(
-    `/owner/schedule?bulkCreated=${toCreate.length}&bulkSkipped=${skipped}`,
-  );
+  return {
+    conflicts,
+    toCreate,
+    toDeleteIds: [...new Set(toDeleteIds)],
+  };
 }
 
-/**
- * Быстрая замена исполнителя(ей) на посту «здесь и сейчас»:
- * закрывает старые назначения, ставит новых, правит смену на сегодня.
- */
-export async function replacePostStaffNow(formData: FormData) {
-  const session = await requireManagementSession();
-  const organizationId = orgIdOf(session);
-  const postId = str(formData, "postId");
-  const replaceAll = str(formData, "replaceAll") === "1";
-  const outgoingIds = formData
-    .getAll("outgoingStaffProfileId")
-    .filter((v): v is string => typeof v === "string" && v.trim() !== "")
-    .map((v) => v.trim());
-  const incomingIds = formData
-    .getAll("incomingStaffProfileId")
-    .filter((v): v is string => typeof v === "string" && v.trim() !== "")
-    .map((v) => v.trim());
-
-  if (!postId) throw new Error("Выберите пост");
-  if (incomingIds.length === 0) {
-    throw new Error("Выберите сотрудника, который заступает");
-  }
-
-  const post = await prisma.servicePost.findFirst({
-    where: { id: postId, organizationId, isActive: true },
-  });
-  if (!post) throw new Error("Пост не найден");
-
-  const openAssignments = await prisma.postAssignment.findMany({
-    where: { organizationId, postId, activeTo: null },
-  });
-
-  const toClose = replaceAll
-    ? openAssignments
-    : openAssignments.filter((a) => outgoingIds.includes(a.staffProfileId));
-
-  if (!replaceAll && outgoingIds.length === 0 && openAssignments.length > 0) {
-    throw new Error("Укажите кого снять, или включите «всех с поста»");
-  }
-
-  const incoming = await prisma.staffProfile.findMany({
-    where: {
-      organizationId,
-      id: { in: incomingIds },
-      isActive: true,
-    },
-  });
-  if (incoming.length !== incomingIds.length) {
-    throw new Error("Не все новые сотрудники найдены");
-  }
-
-  const incomingAdmins = await prisma.membership.findMany({
-    where: {
-      organizationId,
-      role: "ADMIN",
-      userId: { in: incoming.map((p) => p.userId) },
-    },
-    select: { userId: true },
-  });
-  if (incomingAdmins.length > 0) {
-    throw new Error("Администратор не закрепляется за постом");
-  }
-
-  const now = new Date();
-  const dayStart = new Date(now);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(now);
-  dayEnd.setHours(23, 59, 59, 999);
-
-  const { startsAt: postDayStart, endsAt: postDayEnd } = shiftWindowForDay(
-    now,
-    post.workStartHour,
-    post.workEndHour,
-  );
-
-  // Закрыть назначения уходящих
-  if (toClose.length > 0) {
-    await prisma.postAssignment.updateMany({
-      where: {
-        organizationId,
-        id: { in: toClose.map((a) => a.id) },
-        activeTo: null,
-      },
-      data: { activeTo: now },
-    });
-  }
-
-  // Обрезать/убрать сегодняшние смены уходящих на этом посту
-  const outgoingStaffIds = [
-    ...new Set(toClose.map((a) => a.staffProfileId).concat(outgoingIds)),
-  ];
-  if (outgoingStaffIds.length > 0) {
-    const todayShifts = await prisma.staffShift.findMany({
-      where: {
-        organizationId,
-        postId,
-        staffProfileId: { in: outgoingStaffIds },
-        startsAt: { lt: dayEnd },
-        endsAt: { gt: dayStart },
-      },
-    });
-    for (const shift of todayShifts) {
-      if (shift.startsAt > now) {
-        await prisma.staffShift.delete({ where: { id: shift.id } });
-      } else if (shift.endsAt > now) {
-        await prisma.staffShift.update({
-          where: { id: shift.id },
-          data: { endsAt: now },
-        });
-      }
-    }
-  }
-
-  // Назначить входящих (если ещё не на посту)
-  for (const staffProfileId of incomingIds) {
-    const already = await prisma.postAssignment.findFirst({
+async function ensurePostAssignments(
+  organizationId: string,
+  postId: string,
+  staffIds: string[],
+) {
+  for (const staffProfileId of staffIds) {
+    const open = await prisma.postAssignment.findFirst({
       where: {
         organizationId,
         postId,
@@ -579,7 +536,7 @@ export async function replacePostStaffNow(formData: FormData) {
         activeTo: null,
       },
     });
-    if (already) continue;
+    if (open) continue;
     await prisma.postAssignment.create({
       data: {
         organizationId,
@@ -590,55 +547,293 @@ export async function replacePostStaffNow(formData: FormData) {
     });
   }
   await rebalancePostShares(organizationId, postId);
+}
 
-  // Смена «сейчас» для входящих до конца графика поста сегодня
-  const shiftEnd =
-    postDayEnd > now
-      ? postDayEnd
-      : (() => {
-          const e = new Date(now);
-          e.setHours(23, 59, 0, 0);
-          return e;
-        })();
-  const shiftStart =
-    now < postDayStart ? postDayStart : now < shiftEnd ? now : null;
+/** Проверка пересечений перед записью графика. */
+export async function previewBulkFillStaffShifts(
+  input: BulkFillInput,
+): Promise<BulkFillPreviewResult> {
+  try {
+    const prepared = await prepareBulkFill(input);
+    if (!prepared.ok) return prepared;
+    const plan = collectBulkPlan(prepared.data);
+    return {
+      ok: true,
+      plannedCount: plan.toCreate.length,
+      conflicts: plan.conflicts,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Не удалось проверить график",
+    };
+  }
+}
 
-  if (shiftStart && shiftEnd > shiftStart) {
-    for (const staffProfileId of incomingIds) {
-      const overlap = await prisma.staffShift.findFirst({
+/**
+ * Записать смены по посту на период.
+ * При conflicts и replaceExisting=false — не пишет, возвращает список.
+ * Всегда обновляет PostAssignment выбранных (без галочки в UI).
+ */
+export async function applyBulkFillStaffShifts(
+  input: BulkFillInput & { replaceExisting: boolean },
+): Promise<BulkFillApplyResult> {
+  try {
+    const prepared = await prepareBulkFill(input);
+    if (!prepared.ok) return prepared;
+    const plan = collectBulkPlan(prepared.data);
+
+    if (plan.conflicts.length > 0 && !input.replaceExisting) {
+      return {
+        ok: false,
+        error: "Есть пересечения с текущим графиком",
+        conflicts: plan.conflicts,
+      };
+    }
+
+    if (input.replaceExisting && plan.toDeleteIds.length > 0) {
+      const pastOverlap = prepared.data.existing.some(
+        (s) =>
+          plan.toDeleteIds.includes(s.id) && isBeforeTodayLocal(s.startsAt),
+      );
+      if (pastOverlap) {
+        return { ok: false, error: PAST_SCHEDULE_ERROR };
+      }
+      await prisma.staffShift.deleteMany({
         where: {
-          organizationId,
-          postId,
-          staffProfileId,
-          startsAt: { lt: shiftEnd },
-          endsAt: { gt: shiftStart },
+          organizationId: prepared.data.organizationId,
+          id: { in: plan.toDeleteIds },
         },
       });
-      if (overlap) {
-        await prisma.staffShift.update({
-          where: { id: overlap.id },
-          data: {
-            startsAt:
-              overlap.startsAt < shiftStart ? overlap.startsAt : shiftStart,
-            endsAt: shiftEnd > overlap.endsAt ? shiftEnd : overlap.endsAt,
-            note: overlap.note ?? "Замена здесь и сейчас",
-          },
-        });
-      } else {
-        await prisma.staffShift.create({
-          data: {
-            organizationId,
-            staffProfileId,
-            postId,
-            startsAt: shiftStart,
-            endsAt: shiftEnd,
-            note: "Замена здесь и сейчас",
-          },
-        });
-      }
     }
-  }
 
-  revalidateSchedulePaths();
-  redirect(`/owner/schedule?replaced=1&post=${encodeURIComponent(postId)}`);
+    const toCreate =
+      input.replaceExisting || plan.conflicts.length === 0
+        ? plan.toCreate
+        : [];
+
+    // Без replace создаём только дни без пересечений — но сюда не доходим
+    // при conflicts (см. выше). При replace — полный план.
+    if (toCreate.length > 0) {
+      await prisma.staffShift.createMany({ data: toCreate });
+    }
+
+    await ensurePostAssignments(
+      prepared.data.organizationId,
+      prepared.data.postId,
+      prepared.data.staffIds,
+    );
+
+    revalidateSchedulePaths();
+    return {
+      ok: true,
+      created: toCreate.length,
+      replaced: input.replaceExisting ? plan.toDeleteIds.length : 0,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Не удалось заполнить график",
+    };
+  }
+}
+
+export type ScheduleBoardActionResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/**
+ * Перенос смены на другой пост/день (часы — по графику целевого поста).
+ * Для визуальной месячной доски; с подтверждением на клиенте.
+ */
+export async function moveStaffShiftOnBoard(input: {
+  id: string;
+  postId: string;
+  dayKey: string;
+}): Promise<ScheduleBoardActionResult> {
+  try {
+    const session = await requireManagementSession();
+    const organizationId = orgIdOf(session);
+    const day = parseDateInput(input.dayKey);
+    if (!day) return { ok: false, error: "Некорректная дата" };
+    if (isBeforeTodayLocal(day)) {
+      return { ok: false, error: PAST_SCHEDULE_ERROR };
+    }
+
+    const [shift, post] = await Promise.all([
+      prisma.staffShift.findFirst({
+        where: { id: input.id, organizationId },
+        include: {
+          staffProfile: { select: { userId: true } },
+        },
+      }),
+      prisma.servicePost.findFirst({
+        where: { id: input.postId, organizationId, isActive: true },
+      }),
+    ]);
+    if (!shift) return { ok: false, error: "Смена не найдена" };
+    if (!post) return { ok: false, error: "Пост не найден" };
+    if (isBeforeTodayLocal(shift.startsAt)) {
+      return { ok: false, error: PAST_SCHEDULE_ERROR };
+    }
+
+    const membership = await prisma.membership.findFirst({
+      where: { organizationId, userId: shift.staffProfile.userId },
+      select: { role: true },
+    });
+    if (membership?.role === "ADMIN") {
+      return { ok: false, error: "Смену администратора нельзя ставить на пост" };
+    }
+
+    const { startsAt, endsAt } = shiftWindowForDay(
+      day,
+      post.workStartHour,
+      post.workEndHour,
+    );
+    if (endsAt <= startsAt) {
+      return { ok: false, error: "Некорректные часы поста" };
+    }
+
+    const conflict = await prisma.staffShift.findFirst({
+      where: {
+        organizationId,
+        staffProfileId: shift.staffProfileId,
+        id: { not: shift.id },
+        startsAt: { lt: endsAt },
+        endsAt: { gt: startsAt },
+      },
+    });
+    if (conflict) {
+      return {
+        ok: false,
+        error: "У сотрудника уже есть смена, пересекающаяся с этим днём",
+      };
+    }
+
+    await prisma.staffShift.update({
+      where: { id: shift.id },
+      data: {
+        postId: post.id,
+        startsAt,
+        endsAt,
+      },
+    });
+
+    revalidateSchedulePaths();
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Не удалось перенести смену",
+    };
+  }
+}
+
+/** Создать смену на доске (пост + день + сотрудник). */
+export async function createStaffShiftOnBoard(input: {
+  staffProfileId: string;
+  postId: string;
+  dayKey: string;
+  note?: string;
+}): Promise<ScheduleBoardActionResult & { id?: string }> {
+  try {
+    const session = await requireManagementSession();
+    const organizationId = orgIdOf(session);
+    const day = parseDateInput(input.dayKey);
+    if (!day) return { ok: false, error: "Некорректная дата" };
+    if (isBeforeTodayLocal(day)) {
+      return { ok: false, error: PAST_SCHEDULE_ERROR };
+    }
+
+    const [profile, post] = await Promise.all([
+      prisma.staffProfile.findFirst({
+        where: {
+          id: input.staffProfileId,
+          organizationId,
+          isActive: true,
+        },
+      }),
+      prisma.servicePost.findFirst({
+        where: { id: input.postId, organizationId, isActive: true },
+      }),
+    ]);
+    if (!profile) return { ok: false, error: "Сотрудник не найден" };
+    if (!post) return { ok: false, error: "Пост не найден" };
+
+    const membership = await prisma.membership.findFirst({
+      where: { organizationId, userId: profile.userId },
+      select: { role: true },
+    });
+    if (membership?.role === "ADMIN") {
+      return { ok: false, error: "Администратора нельзя ставить на пост" };
+    }
+
+    const { startsAt, endsAt } = shiftWindowForDay(
+      day,
+      post.workStartHour,
+      post.workEndHour,
+    );
+    if (endsAt <= startsAt) {
+      return { ok: false, error: "Некорректные часы поста" };
+    }
+
+    const conflict = await prisma.staffShift.findFirst({
+      where: {
+        organizationId,
+        staffProfileId: profile.id,
+        startsAt: { lt: endsAt },
+        endsAt: { gt: startsAt },
+      },
+    });
+    if (conflict) {
+      return {
+        ok: false,
+        error: "У сотрудника уже есть смена в этот день",
+      };
+    }
+
+    const created = await prisma.staffShift.create({
+      data: {
+        organizationId,
+        staffProfileId: profile.id,
+        postId: post.id,
+        startsAt,
+        endsAt,
+        note: input.note?.trim() || null,
+      },
+    });
+
+    revalidateSchedulePaths();
+    return { ok: true, id: created.id };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Не удалось создать смену",
+    };
+  }
+}
+
+/** Удалить смену с доски (без redirect). */
+export async function deleteStaffShiftOnBoard(input: {
+  id: string;
+}): Promise<ScheduleBoardActionResult> {
+  try {
+    const session = await requireManagementSession();
+    const organizationId = orgIdOf(session);
+    const existing = await prisma.staffShift.findFirst({
+      where: { id: input.id, organizationId },
+    });
+    if (!existing) return { ok: false, error: "Смена не найдена" };
+    if (isBeforeTodayLocal(existing.startsAt)) {
+      return { ok: false, error: PAST_SCHEDULE_ERROR };
+    }
+    await prisma.staffShift.delete({ where: { id: existing.id } });
+    revalidateSchedulePaths();
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Не удалось удалить смену",
+    };
+  }
 }
