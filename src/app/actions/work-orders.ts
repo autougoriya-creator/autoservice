@@ -218,9 +218,10 @@ export async function updateWorkOrderStatus(formData: FormData) {
         organizationId,
         workOrderId: id,
         createdById: session.id,
-        note: "Автосписание по нормам при закрытии ЗН",
+        note: "Списание по нормам при закрытии ЗН",
       });
       revalidatePath("/owner/warehouse");
+      revalidatePath("/owner/warehouse/reconcile");
     }
   } else {
     if (current.status === "CLOSED") {

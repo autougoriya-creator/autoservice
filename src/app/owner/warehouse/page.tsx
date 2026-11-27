@@ -6,6 +6,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { formatDateTime, stockMovementLabel } from "@/lib/format";
 import { formatQty } from "@/lib/warehouse";
+import { workOrderNumberLabel } from "@/lib/work-order";
 import { orgIdOf, requireManagementSession } from "@/lib/tenant";
 import {
   ButtonLink,
@@ -35,9 +36,13 @@ export default async function WarehousePage() {
     }),
     prisma.stockMovement.findMany({
       where: { organizationId },
-      include: { fluidSku: true, createdBy: true },
+      include: {
+        fluidSku: true,
+        createdBy: true,
+        workOrder: { include: { post: true } },
+      },
       orderBy: { createdAt: "desc" },
-      take: 20,
+      take: 30,
     }),
   ]);
 
@@ -48,7 +53,7 @@ export default async function WarehousePage() {
       <SectionTitle
         eyebrow="Склад"
         title="Техжидкости"
-        description="Остатки, поступление и расход. Учёт по организации."
+        description="Остатки, поступление и расход по заказ-нарядам. Учёт по организации."
       />
 
       <Toolbar>
@@ -56,6 +61,9 @@ export default async function WarehousePage() {
           Позиций: {skus.length}
         </p>
         <div className="flex flex-wrap gap-2">
+          <ButtonLink href="/owner/warehouse/reconcile" variant="ghost">
+            Сверка
+          </ButtonLink>
           <ButtonLink href="/owner/warehouse/inventory" variant="ghost">
             Инвентаризация
           </ButtonLink>
@@ -181,11 +189,19 @@ export default async function WarehousePage() {
         {movements.length === 0 ? (
           <EmptyStub
             title="Движений пока нет"
-            description="Поступление, расход или инвентаризация появятся здесь."
+            description="Поступление, расход по ЗН или инвентаризация появятся здесь."
           />
         ) : (
           <DataTable
-            headers={["Когда", "Тип", "Позиция", "Δ", "Остаток", "Кто"]}
+            headers={[
+              "Когда",
+              "Тип",
+              "Позиция",
+              "Δ",
+              "Остаток",
+              "Заказ-наряд",
+              "Кто",
+            ]}
           >
             {movements.map((m) => (
               <tr key={m.id}>
@@ -209,6 +225,27 @@ export default async function WarehousePage() {
                 </td>
                 <td className="px-4 py-3 text-[var(--ink-soft)]">
                   {formatQty(m.quantityAfter, m.fluidSku.unit)}
+                </td>
+                <td className="px-4 py-3 text-sm">
+                  {m.workOrder ? (
+                    <span>
+                      <Link
+                        href={`/owner/work-orders/${m.workOrder.id}`}
+                        className="font-semibold text-[var(--accent)] hover:underline"
+                      >
+                        {workOrderNumberLabel(m.workOrder.number)}
+                      </Link>
+                      {m.workOrder.post ? (
+                        <span className="mt-0.5 block text-xs text-[var(--ink-soft)]">
+                          {m.workOrder.post.name}
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : (
+                    <span className="text-[var(--ink-soft)]">
+                      {m.note ?? "—"}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-[var(--ink-soft)]">
                   {m.createdBy?.name ?? "—"}

@@ -804,6 +804,74 @@ async function main() {
     lines: [{ serviceId: services[1].id }],
   });
 
+  // Списания по нормам закрытых ЗН (движения склада ↔ заказ-наряд)
+  async function seedWoWriteoff(opts: {
+    workOrderId: string;
+    fluidSkuId: string;
+    qty: number;
+    when: Date;
+    note: string;
+  }) {
+    const sku = await prisma.fluidSku.findUniqueOrThrow({
+      where: { id: opts.fluidSkuId },
+    });
+    const quantityAfter =
+      Math.round((sku.quantityOnHand - opts.qty) * 1000) / 1000;
+    await prisma.fluidSku.update({
+      where: { id: sku.id },
+      data: { quantityOnHand: quantityAfter },
+    });
+    await prisma.stockMovement.create({
+      data: {
+        organizationId: org.id,
+        fluidSkuId: opts.fluidSkuId,
+        type: "CONSUMPTION",
+        quantityDelta: -opts.qty,
+        quantityAfter,
+        note: opts.note,
+        workOrderId: opts.workOrderId,
+        createdById: admin.id,
+        createdAt: opts.when,
+      },
+    });
+  }
+
+  await seedWoWriteoff({
+    workOrderId: woClosedMaria.id,
+    fluidSkuId: shampoo.id,
+    qty: 0.05,
+    when: closedToday,
+    note: "Списание по нормам при закрытии ЗН",
+  });
+  await seedWoWriteoff({
+    workOrderId: woClosedIvan.id,
+    fluidSkuId: shampoo.id,
+    qty: 0.12,
+    when: closedToday2,
+    note: "Списание по нормам при закрытии ЗН",
+  });
+  await seedWoWriteoff({
+    workOrderId: woClosedIvan.id,
+    fluidSkuId: wax.id,
+    qty: 0.04,
+    when: closedToday2,
+    note: "Списание по нормам при закрытии ЗН",
+  });
+  await seedWoWriteoff({
+    workOrderId: woUpsellAdmin.id,
+    fluidSkuId: shampoo.id,
+    qty: 0.05,
+    when: closedUpsell,
+    note: "Списание по нормам при закрытии ЗН",
+  });
+  await seedWoWriteoff({
+    workOrderId: woUpsellAdmin.id,
+    fluidSkuId: engineCleaner.id,
+    qty: 0.25,
+    when: closedUpsell,
+    note: "Списание по нормам при закрытии ЗН",
+  });
+
   // Keep legacy Order rows for older stub screens if any remain
   await prisma.order.createMany({
     data: [

@@ -87,11 +87,22 @@ export async function applyNormWriteoff(opts: {
   });
   if (existing > 0) return { skipped: true as const, movements: [] };
 
+  const workOrder = await prisma.workOrder.findFirst({
+    where: { id: opts.workOrderId, organizationId: opts.organizationId },
+    select: { number: true },
+  });
+  const woLabel = workOrder
+    ? `ЗН-${String(workOrder.number).padStart(4, "0")}`
+    : "ЗН";
+
   const needs = await computeWriteoffNeeds(
     opts.organizationId,
     opts.workOrderId,
   );
   if (needs.length === 0) return { skipped: false as const, movements: [] };
+
+  const note =
+    opts.note ?? `Списание по нормам · ${woLabel}`;
 
   const movements = await prisma.$transaction(async (tx) => {
     const created = [];
@@ -113,9 +124,7 @@ export async function applyNormWriteoff(opts: {
           type: "CONSUMPTION",
           quantityDelta: -need.quantity,
           quantityAfter,
-          note:
-            opts.note ??
-            `Автосписание по нормам ЗН`,
+          note,
           workOrderId: opts.workOrderId,
           createdById: opts.createdById ?? null,
         },

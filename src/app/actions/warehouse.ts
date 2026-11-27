@@ -20,6 +20,7 @@ function optStr(formData: FormData, key: string) {
 function revalidateWarehouse(paths: string[] = []) {
   revalidatePath("/owner/warehouse");
   revalidatePath("/owner/warehouse/inventory");
+  revalidatePath("/owner/warehouse/reconcile");
   for (const p of paths) revalidatePath(p);
 }
 
@@ -218,6 +219,55 @@ export async function inventoryAdjust(formData: FormData) {
     `/owner/warehouse/${fluidSkuId}`,
     "/owner/warehouse/inventory",
   ]);
+  redirect("/owner/warehouse/inventory");
+}
+
+/**
+ * Инвентаризация конца периода: фактические остатки по всем (или отмеченным) позициям.
+ * Поля формы: counted_<fluidSkuId>, note (общий комментарий).
+ */
+export async function inventoryAdjustBatch(formData: FormData) {
+  const session = await requireManagementSession();
+  const organizationId = orgIdOf(session);
+  const note = optStr(formData, "note") ?? "Инвентаризация за период";
+  const periodLabel = optStr(formData, "periodLabel");
+  const fullNote = periodLabel ? `${note} · ${periodLabel}` : note;
+
+  const skus = await prisma.fluidSku.findMany({
+    where: { organizationId, isActive: true },
+    select: { id: true },
+  });
+
+  const updates: { fluidSkuId: string; counted: number }[] = [];
+  for (const sku of skus) {
+    const raw = str(formData, `counted_${sku.id}`);
+    if (!raw) continue;
+    const counted = parseQty(raw);
+    if (counted === null || counted < 0) {
+      throw new Error("Фактический остаток должен быть числом ≥ 0");
+    }
+    updates.push({ fluidSkuId: sku.id, counted });
+  }
+
+  if (updates.length === 0) {
+    throw new Error("Укажите фактический остаток хотя бы по одной позиции");
+  }
+
+  for (const u of updates) {
+    await applyMovement({
+      organizationId,
+      fluidSkuId: u.fluidSkuId,
+      type: "INVENTORY",
+      delta: 0,
+      absoluteAfter: u.counted,
+      note: fullNote,
+      createdById: session.id,
+    });
+  }
+
+  revalidateWarehouse(
+    updates.map((u) => `/owner/warehouse/${u.fluidSkuId}`),
+  );
   redirect("/owner/warehouse/inventory");
 }
 

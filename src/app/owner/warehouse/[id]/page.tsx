@@ -4,8 +4,9 @@ import { deleteFluidSku, updateFluidSku } from "@/app/actions/warehouse";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime, stockMovementLabel } from "@/lib/format";
 import { formatQty } from "@/lib/warehouse";
+import { workOrderNumberLabel } from "@/lib/work-order";
 import { orgIdOf, requireManagementSession } from "@/lib/tenant";
-import { SectionTitle, SubmitButton } from "@/components/ui";
+import { ButtonLink, SectionTitle, SubmitButton } from "@/components/ui";
 import {
   DataTable,
   Field,
@@ -13,6 +14,7 @@ import {
   FormCard,
   TextInput,
   TextSelect,
+  Toolbar,
 } from "@/components/forms";
 
 export default async function FluidSkuDetailPage({
@@ -29,8 +31,11 @@ export default async function FluidSkuDetailPage({
     include: {
       movements: {
         orderBy: { createdAt: "desc" },
-        take: 30,
-        include: { createdBy: true, workOrder: true },
+        take: 40,
+        include: {
+          createdBy: true,
+          workOrder: { include: { post: true } },
+        },
       },
       serviceNorms: {
         include: { service: true },
@@ -47,6 +52,15 @@ export default async function FluidSkuDetailPage({
         title={sku.name}
         description={`Остаток: ${formatQty(sku.quantityOnHand, sku.unit)}`}
       />
+
+      <Toolbar>
+        <ButtonLink href="/owner/warehouse" variant="ghost">
+          ← К остаткам
+        </ButtonLink>
+        <ButtonLink href="/owner/warehouse/reconcile" variant="ghost">
+          Сверка
+        </ButtonLink>
+      </Toolbar>
 
       <FormCard className="max-w-xl">
         <form action={updateFluidSku} className="space-y-4">
@@ -116,7 +130,9 @@ export default async function FluidSkuDetailPage({
         {sku.movements.length === 0 ? (
           <p className="text-sm text-[var(--ink-soft)]">Движений ещё нет.</p>
         ) : (
-          <DataTable headers={["Когда", "Тип", "Δ", "Остаток", "Комментарий"]}>
+          <DataTable
+            headers={["Когда", "Тип", "Δ", "Остаток", "ЗН / комментарий"]}
+          >
             {sku.movements.map((m) => (
               <tr key={m.id}>
                 <td className="px-4 py-3 whitespace-nowrap text-[var(--ink-soft)]">
@@ -133,10 +149,22 @@ export default async function FluidSkuDetailPage({
                   {formatQty(m.quantityAfter, sku.unit)}
                 </td>
                 <td className="px-4 py-3 text-sm text-[var(--ink-soft)]">
-                  {m.note ?? "—"}
-                  {m.workOrder
-                    ? ` · ЗН-${String(m.workOrder.number).padStart(4, "0")}`
-                    : ""}
+                  {m.workOrder ? (
+                    <>
+                      <Link
+                        href={`/owner/work-orders/${m.workOrder.id}`}
+                        className="font-semibold text-[var(--accent)] hover:underline"
+                      >
+                        {workOrderNumberLabel(m.workOrder.number)}
+                      </Link>
+                      {m.workOrder.post
+                        ? ` · ${m.workOrder.post.name}`
+                        : ""}
+                      {m.note ? ` · ${m.note}` : ""}
+                    </>
+                  ) : (
+                    (m.note ?? "—")
+                  )}
                   {m.createdBy ? ` · ${m.createdBy.name}` : ""}
                 </td>
               </tr>
