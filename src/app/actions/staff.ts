@@ -719,6 +719,10 @@ export async function moveStaffShiftOnBoard(input: {
       },
     });
 
+    await ensurePostAssignments(organizationId, post.id, [
+      shift.staffProfileId,
+    ]);
+
     revalidateSchedulePaths();
     return { ok: true };
   } catch (e) {
@@ -802,6 +806,8 @@ export async function createStaffShiftOnBoard(input: {
         note: input.note?.trim() || null,
       },
     });
+
+    await ensurePostAssignments(organizationId, post.id, [profile.id]);
 
     revalidateSchedulePaths();
     return { ok: true, id: created.id };

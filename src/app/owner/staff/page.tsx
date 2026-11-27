@@ -1,7 +1,5 @@
 import Link from "next/link";
 import {
-  assignStaffToPost,
-  clearPostAssignment,
   updateAdminUpsellBonusPercent,
   upsertStaffProfile,
 } from "@/app/actions/staff";
@@ -24,7 +22,7 @@ export default async function StaffPage() {
   const session = await requireOwnerSession();
   const organizationId = orgIdOf(session);
 
-  const [org, profiles, staffUsers, posts, assignments] = await Promise.all([
+  const [org, profiles, staffUsers, assignments] = await Promise.all([
     prisma.organization.findFirst({
       where: { id: organizationId },
       select: { adminUpsellBonusPercent: true },
@@ -39,10 +37,6 @@ export default async function StaffPage() {
       include: { user: true },
       orderBy: { role: "asc" },
     }),
-    prisma.servicePost.findMany({
-      where: { organizationId, isActive: true },
-      orderBy: { sortOrder: "asc" },
-    }),
     prisma.postAssignment.findMany({
       where: { organizationId, activeTo: null },
       include: {
@@ -56,27 +50,24 @@ export default async function StaffPage() {
   const unprofiled = staffUsers.filter((m) => !profiledUserIds.has(m.userId));
   const bonusPercent = org?.adminUpsellBonusPercent ?? 0;
   const roleByUserId = new Map(staffUsers.map((m) => [m.userId, m.role]));
-  const floorProfiles = profiles.filter(
-    (p) => p.isActive && roleByUserId.get(p.userId) !== "ADMIN",
-  );
 
   return (
     <div className="space-y-10">
       <SectionTitle
         eyebrow="Персонал"
         title="Сотрудники и оплата"
-        description="Мойщики и слесари — на постах; администратор без поста: оклад + бонус за допродажи из закрытых ЗН за смену."
+        description="Мойщики и слесари — смены на постах в «График»; администратор без поста: оклад + бонус за допродажи из закрытых ЗН за смену."
       />
 
       <Toolbar>
         <p className="text-sm text-[var(--ink-soft)]">
           Профилей: {profiles.length}
         </p>
-        <ButtonLink href="/owner/posts" variant="ghost">
-          Посты и доли
-        </ButtonLink>
         <ButtonLink href="/owner/schedule" variant="ghost">
           График смен
+        </ButtonLink>
+        <ButtonLink href="/owner/posts" variant="ghost">
+          Посты и доли
         </ButtonLink>
         <ButtonLink href="/owner/pnl" variant="ghost">
           Экономика
@@ -107,7 +98,7 @@ export default async function StaffPage() {
       </FormCard>
 
       <DataTable
-        headers={["Сотрудник", "Должность", "Оплата", "Посты", ""]}
+        headers={["Сотрудник", "Должность", "Оплата", "Посты (из графика)", ""]}
       >
         {profiles.map((p) => {
           const isAdminProfile = roleByUserId.get(p.userId) === "ADMIN";
@@ -153,125 +144,73 @@ export default async function StaffPage() {
         })}
       </DataTable>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <FormCard>
-          <h2 className="brand-mark mb-4 text-lg">Профиль сотрудника</h2>
-          <form action={upsertStaffProfile} className="space-y-4">
-            <Field label="Пользователь (сотрудник или админ)" htmlFor="userId">
-              <TextSelect id="userId" name="userId" required>
-                <option value="">Выберите…</option>
-                {staffUsers.map((m) => (
-                  <option key={m.userId} value={m.userId}>
-                    {m.user.name} · {m.role === "ADMIN" ? "админ" : "сотрудник"} ·{" "}
-                    {m.user.email}
-                    {profiledUserIds.has(m.userId) ? " (есть профиль)" : ""}
-                  </option>
-                ))}
-              </TextSelect>
-            </Field>
-            <Field label="Должность" htmlFor="title">
+      <FormCard className="max-w-xl">
+        <h2 className="brand-mark mb-4 text-lg">Профиль сотрудника</h2>
+        <p className="mb-4 text-xs text-[var(--ink-soft)]">
+          Смены и посты назначаются только в{" "}
+          <Link
+            href="/owner/schedule"
+            className="font-semibold text-[var(--accent)]"
+          >
+            графике работы
+          </Link>
+          . Доли % — в карточках постов.
+        </p>
+        <form action={upsertStaffProfile} className="space-y-4">
+          <Field label="Пользователь (сотрудник или админ)" htmlFor="userId">
+            <TextSelect id="userId" name="userId" required>
+              <option value="">Выберите…</option>
+              {staffUsers.map((m) => (
+                <option key={m.userId} value={m.userId}>
+                  {m.user.name} · {m.role === "ADMIN" ? "админ" : "сотрудник"} ·{" "}
+                  {m.user.email}
+                  {profiledUserIds.has(m.userId) ? " (есть профиль)" : ""}
+                </option>
+              ))}
+            </TextSelect>
+          </Field>
+          <Field label="Должность" htmlFor="title">
+            <TextInput
+              id="title"
+              name="title"
+              defaultValue="Мойщик"
+              placeholder="Мойщик / Слесарь"
+            />
+          </Field>
+          <Field label="Режим оплаты" htmlFor="payMode">
+            <TextSelect id="payMode" name="payMode" defaultValue="DEAL">
+              <option value="DEAL">Сделка — % от заказ-наряда</option>
+              <option value="SALARY">Оклад — фиксированная ЗП</option>
+            </TextSelect>
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="% сделки" htmlFor="dealPercent">
               <TextInput
-                id="title"
-                name="title"
-                defaultValue="Мойщик"
-                placeholder="Мойщик / Слесарь"
+                id="dealPercent"
+                name="dealPercent"
+                inputMode="numeric"
+                defaultValue="30"
               />
             </Field>
-            <Field label="Режим оплаты" htmlFor="payMode">
-              <TextSelect id="payMode" name="payMode" defaultValue="DEAL">
-                <option value="DEAL">Сделка — % от заказ-наряда</option>
-                <option value="SALARY">Оклад — фиксированная ЗП</option>
-              </TextSelect>
+            <Field label="Оклад, ₽/мес" htmlFor="salaryRub">
+              <TextInput
+                id="salaryRub"
+                name="salaryRub"
+                inputMode="numeric"
+                defaultValue="0"
+              />
             </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="% сделки" htmlFor="dealPercent">
-                <TextInput
-                  id="dealPercent"
-                  name="dealPercent"
-                  inputMode="numeric"
-                  defaultValue="30"
-                />
-              </Field>
-              <Field label="Оклад, ₽/мес" htmlFor="salaryRub">
-                <TextInput
-                  id="salaryRub"
-                  name="salaryRub"
-                  inputMode="numeric"
-                  defaultValue="0"
-                />
-              </Field>
-            </div>
-            <FormActions>
-              <SubmitButton className="sm:w-auto">Сохранить профиль</SubmitButton>
-            </FormActions>
-          </form>
-          {unprofiled.length > 0 ? (
-            <p className="mt-3 text-xs text-[var(--ink-soft)]">
-              Без профиля: {unprofiled.map((m) => m.user.name).join(", ")}
-            </p>
-          ) : null}
-        </FormCard>
-
-        <FormCard>
-          <h2 className="brand-mark mb-4 text-lg">Закрепить за постом</h2>
-          <p className="mb-3 text-xs text-[var(--ink-soft)]">
-            Только мойщики/слесари. Администратор на пост не назначается. Доли % —
-            в{" "}
-            <Link href="/owner/posts" className="font-semibold text-[var(--accent)]">
-              карточках постов
-            </Link>
-            .
+          </div>
+          <FormActions>
+            <SubmitButton className="sm:w-auto">Сохранить профиль</SubmitButton>
+          </FormActions>
+        </form>
+        {unprofiled.length > 0 ? (
+          <p className="mt-3 text-xs text-[var(--ink-soft)]">
+            Без профиля: {unprofiled.map((m) => m.user.name).join(", ")}
           </p>
-          <form action={assignStaffToPost} className="space-y-4">
-            <Field label="Пост" htmlFor="postId">
-              <TextSelect id="postId" name="postId" required>
-                {posts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </TextSelect>
-            </Field>
-            <Field label="Сотрудник" htmlFor="staffProfileId">
-              <TextSelect id="staffProfileId" name="staffProfileId" required>
-                {floorProfiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.user.name} · {p.title}
-                  </option>
-                ))}
-              </TextSelect>
-            </Field>
-            <FormActions>
-              <SubmitButton className="sm:w-auto">Закрепить</SubmitButton>
-            </FormActions>
-          </form>
-
-          <ul className="mt-6 space-y-2">
-            {assignments.map((a) => (
-              <li
-                key={a.id}
-                className="flex items-center justify-between gap-3 rounded-lg bg-[var(--paper)] px-3 py-2 text-sm"
-              >
-                <span>
-                  <strong>{a.post.name}</strong> → {a.staffProfile.user.name}{" "}
-                  <span className="text-[var(--ink-soft)]">
-                    ({a.sharePercent}%)
-                  </span>
-                </span>
-                <form action={clearPostAssignment}>
-                  <input type="hidden" name="id" value={a.id} />
-                  <button
-                    type="submit"
-                    className="cursor-pointer text-xs font-semibold text-red-700"
-                  >
-                    Снять
-                  </button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        </FormCard>
-      </div>
+        ) : null}
+      </FormCard>
     </div>
   );
 }

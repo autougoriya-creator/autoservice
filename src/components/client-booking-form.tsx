@@ -19,6 +19,7 @@ import {
   localDayKey,
   parseLocalDayKey,
   type BusyInterval,
+  type PostShiftCover,
 } from "@/lib/client-slots";
 
 type VehicleOption = {
@@ -49,6 +50,12 @@ type BusyPayload = {
   startsAtIso: string;
   durationMin: number;
   postId: string;
+};
+
+type ShiftPayload = {
+  postId: string;
+  startsAtIso: string;
+  endsAtIso: string;
 };
 
 const WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
@@ -82,12 +89,14 @@ export function ClientBookingForm({
   services,
   posts,
   busy,
+  shifts,
   phone,
 }: {
   vehicles: VehicleOption[];
   services: ServiceOption[];
   posts: PostOption[];
   busy: BusyPayload[];
+  shifts: ShiftPayload[];
   phone: string;
 }) {
   const dayKeys = useMemo(() => bookingDayKeys(new Date(), 14), []);
@@ -108,6 +117,16 @@ export function ClientBookingForm({
         postId: b.postId,
       })),
     [busy],
+  );
+
+  const shiftCovers: PostShiftCover[] = useMemo(
+    () =>
+      shifts.map((s) => ({
+        postId: s.postId,
+        startsAt: new Date(s.startsAtIso),
+        endsAt: new Date(s.endsAtIso),
+      })),
+    [shifts],
   );
 
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
@@ -144,8 +163,9 @@ export function ClientBookingForm({
         posts,
         busy: busyIntervals,
         durationMin,
+        shifts: shiftCovers,
       }),
-    [dayKey, posts, busyIntervals, durationMin],
+    [dayKey, posts, busyIntervals, durationMin, shiftCovers],
   );
 
   const freeByDay = useMemo(() => {
@@ -156,11 +176,12 @@ export function ClientBookingForm({
         posts,
         busy: busyIntervals,
         durationMin,
+        shifts: shiftCovers,
       }).filter((s) => s.available).length;
       map.set(key, free);
     }
     return map;
-  }, [dayKeys, posts, busyIntervals, durationMin]);
+  }, [dayKeys, posts, busyIntervals, durationMin, shiftCovers]);
 
   const availableSlots = daySlots.filter((s) => s.available && s.postId);
   const selectedSlot =

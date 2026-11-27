@@ -7,6 +7,7 @@ import { orgIdOf } from "@/lib/tenant";
 import { prisma } from "@/lib/prisma";
 import { BOARD_SNAP_MIN } from "@/lib/load-board";
 import { isWithinPostHours } from "@/lib/payroll";
+import { assertPostSlotBookable } from "@/lib/post-booking-gate";
 import { resolveServicePriceRub } from "@/lib/pricing";
 import { snapDurationMin } from "@/lib/client-slots";
 import { BOARD_BOOKING_STATUSES } from "@/lib/booking";
@@ -140,9 +141,17 @@ export async function createClientSelfBooking(formData: FormData) {
   ) {
     const pad = (n: number) => String(n).padStart(2, "0");
     throw new Error(
-      `Запись на «${post.name}» доступна с ${pad(post.workStartHour)}:00 до ${pad(post.workEndHour)}:00`,
+      `Запись на «${post.name}» по шаблону смены с ${pad(post.workStartHour)}:00 до ${pad(post.workEndHour)}:00`,
     );
   }
+
+  const staffingErr = await assertPostSlotBookable(
+    organizationId,
+    post,
+    startsAt,
+    durationMin,
+  );
+  if (staffingErr) throw new Error(staffingErr);
 
   const slotEnd = startsAt.getTime() + durationMin * 60_000;
   const windowStart = new Date(startsAt.getTime() - 8 * 60 * 60_000);

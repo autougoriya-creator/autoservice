@@ -3,16 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import {
-  clampPostHours,
-  equalSharePercents,
-} from "@/lib/payroll";
-import {
-  isOwner,
-  orgIdOf,
-  requireManagementSession,
-  requireOwnerSession,
-} from "@/lib/tenant";
+import { clampPostHours } from "@/lib/payroll";
+import { orgIdOf, requireOwnerSession } from "@/lib/tenant";
 
 function str(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -34,24 +26,65 @@ function revalidatePosts() {
   revalidatePath("/client/book");
 }
 
-async function rebalanceShares(organizationId: string, postId: string) {
-  const open = await prisma.postAssignment.findMany({
-    where: { organizationId, postId, activeTo: null },
-    orderBy: { createdAt: "asc" },
+/** OWNER: создать новый пост */
+export async function createServicePost(formData: FormData) {
+  const session = await requireOwnerSession();
+  const organizationId = orgIdOf(session);
+  const name = str(formData, "name");
+  if (!name) throw new Error("Укажите название поста");
+
+  const maxSort = await prisma.servicePost.aggregate({
+    where: { organizationId },
+    _max: { sortOrder: true },
   });
-  if (open.length === 0) return;
-  const shares = equalSharePercents(open.length);
-  await Promise.all(
-    open.map((a, i) =>
-      prisma.postAssignment.update({
-        where: { id: a.id },
-        data: { sharePercent: shares[i] },
-      }),
-    ),
+  const sortOrder = intOr(
+    formData,
+    "sortOrder",
+    (maxSort._max.sortOrder ?? 0) + 1,
   );
+  const { workStartHour, workEndHour } = clampPostHours(
+    intOr(formData, "workStartHour", 8),
+    intOr(formData, "workEndHour", 20),
+  );
+
+  await prisma.servicePost.create({
+    data: {
+      organizationId,
+      name,
+      sortOrder,
+      workStartHour,
+      workEndHour,
+      isActive: true,
+    },
+  });
+
+  revalidatePosts();
+  redirect("/owner/posts");
 }
 
-/** OWNER: часы работы конкретного поста */
+/** OWNER: переименовать / порядок / активность */
+export async function updateServicePost(formData: FormData) {
+  const session = await requireOwnerSession();
+  const organizationId = orgIdOf(session);
+  const postId = str(formData, "postId");
+  const name = str(formData, "name");
+  if (!postId) throw new Error("Не указан пост");
+  if (!name) throw new Error("Укажите название поста");
+
+  const sortOrder = intOr(formData, "sortOrder", 0);
+  const isActive = str(formData, "isActive") !== "0";
+
+  const updated = await prisma.servicePost.updateMany({
+    where: { id: postId, organizationId },
+    data: { name, sortOrder, isActive },
+  });
+  if (updated.count === 0) throw new Error("Пост не найден");
+
+  revalidatePosts();
+  redirect("/owner/posts");
+}
+
+/** OWNER: часы смены поста (шаблон для графика) */
 export async function updatePostHours(formData: FormData) {
   const session = await requireOwnerSession();
   const organizationId = orgIdOf(session);
@@ -73,92 +106,7 @@ export async function updatePostHours(formData: FormData) {
   redirect("/owner/posts");
 }
 
-/**
- * OWNER + ADMIN: назначить исполнителя на пост.
- * Долю % задаёт OWNER; иначе доли на посту выравниваются.
- */
-export async function assignPerformerToPost(formData: FormData) {
-  const session = await requireManagementSession();
-  const organizationId = orgIdOf(session);
-  const postId = str(formData, "postId");
-  const staffProfileId = str(formData, "staffProfileId");
-  const shareRaw = str(formData, "sharePercent");
-  const ownerSetsShare = isOwner(session) && shareRaw !== "";
-
-  if (!postId || !staffProfileId) throw new Error("Нужны пост и сотрудник");
-
-  const [post, profile] = await Promise.all([
-    prisma.servicePost.findFirst({ where: { id: postId, organizationId } }),
-    prisma.staffProfile.findFirst({
-      where: { id: staffProfileId, organizationId, isActive: true },
-    }),
-  ]);
-  if (!post || !profile) throw new Error("Пост или профиль не найдены");
-
-  const membership = await prisma.membership.findFirst({
-    where: { organizationId, userId: profile.userId },
-    select: { role: true },
-  });
-  if (membership?.role === "ADMIN") {
-    throw new Error("Администратор не закрепляется за постом");
-  }
-
-  await prisma.postAssignment.updateMany({
-    where: {
-      organizationId,
-      postId,
-      staffProfileId,
-      activeTo: null,
-    },
-    data: { activeTo: new Date() },
-  });
-
-  const sharePercent = ownerSetsShare
-    ? Math.max(0, Math.min(100, intOr(formData, "sharePercent", 100)))
-    : 100;
-
-  await prisma.postAssignment.create({
-    data: {
-      organizationId,
-      postId,
-      staffProfileId,
-      sharePercent,
-    },
-  });
-
-  if (!ownerSetsShare) {
-    await rebalanceShares(organizationId, postId);
-  }
-
-  revalidatePosts();
-  redirect("/owner/posts");
-}
-
-/** OWNER + ADMIN: снять исполнителя с поста */
-export async function clearPostPerformer(formData: FormData) {
-  const session = await requireManagementSession();
-  const organizationId = orgIdOf(session);
-  const id = str(formData, "id");
-  const assignment = await prisma.postAssignment.findFirst({
-    where: { id, organizationId, activeTo: null },
-  });
-  if (!assignment) {
-    revalidatePosts();
-    redirect("/owner/posts");
-  }
-
-  await prisma.postAssignment.updateMany({
-    where: { id, organizationId, activeTo: null },
-    data: { activeTo: new Date() },
-  });
-
-  await rebalanceShares(organizationId, assignment.postId);
-
-  revalidatePosts();
-  redirect("/owner/posts");
-}
-
-/** OWNER: доля вознаграждения на посту */
+/** OWNER: доля вознаграждения на посту (назначения — только из графика) */
 export async function updateAssignmentShare(formData: FormData) {
   const session = await requireOwnerSession();
   const organizationId = orgIdOf(session);

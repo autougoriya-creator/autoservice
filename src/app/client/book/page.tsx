@@ -37,34 +37,48 @@ export default async function ClientBookPage() {
   const horizon = new Date();
   horizon.setDate(horizon.getDate() + 15);
 
-  const [services, posts, bookings, workOrders] = await Promise.all([
-    prisma.service.findMany({
-      where: { organizationId: orgId, isActive: true },
-      include: { classPrices: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.servicePost.findMany({
-      where: { organizationId: orgId, isActive: true },
-      orderBy: { sortOrder: "asc" },
-    }),
-    prisma.booking.findMany({
-      where: {
-        organizationId: orgId,
-        startsAt: { gte: new Date(), lte: horizon },
-        workOrderId: null,
-      },
-      select: {
-        startsAt: true,
-        durationMin: true,
-        postId: true,
-        status: true,
-      },
-    }),
-    prisma.workOrder.findMany({
-      where: { organizationId: orgId },
-      include: { lines: true },
-    }),
-  ]);
+  const [services, posts, bookings, workOrders, staffShifts] =
+    await Promise.all([
+      prisma.service.findMany({
+        where: { organizationId: orgId, isActive: true },
+        include: { classPrices: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.servicePost.findMany({
+        where: { organizationId: orgId, isActive: true },
+        orderBy: { sortOrder: "asc" },
+      }),
+      prisma.booking.findMany({
+        where: {
+          organizationId: orgId,
+          startsAt: { gte: new Date(), lte: horizon },
+          workOrderId: null,
+        },
+        select: {
+          startsAt: true,
+          durationMin: true,
+          postId: true,
+          status: true,
+        },
+      }),
+      prisma.workOrder.findMany({
+        where: { organizationId: orgId },
+        include: { lines: true },
+      }),
+      prisma.staffShift.findMany({
+        where: {
+          organizationId: orgId,
+          postId: { not: null },
+          startsAt: { lte: horizon },
+          endsAt: { gte: new Date() },
+        },
+        select: {
+          postId: true,
+          startsAt: true,
+          endsAt: true,
+        },
+      }),
+    ]);
 
   const bookingBusyStatuses = new Set([
     "NEW",
@@ -138,6 +152,13 @@ export default async function ClientBookPage() {
           workEndHour: p.workEndHour,
         }))}
         busy={busy}
+        shifts={staffShifts
+          .filter((s): s is typeof s & { postId: string } => s.postId != null)
+          .map((s) => ({
+            postId: s.postId,
+            startsAtIso: s.startsAt.toISOString(),
+            endsAtIso: s.endsAt.toISOString(),
+          }))}
       />
     </div>
   );
